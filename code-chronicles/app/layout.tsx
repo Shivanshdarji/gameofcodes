@@ -1,0 +1,31 @@
+import type { Metadata } from "next";
+import { Inter, Orbitron } from "next/font/google";
+import "./globals.css";
+import { AudioProvider } from "@/components/providers/AudioProvider";
+import { GameProvider } from "@/components/providers/GameProvider";
+
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const orbitron = Orbitron({ subsets: ["latin"], variable: "--font-orbitron" });
+
+export const metadata: Metadata = {
+  title: "Code Chronicles: Operation Lunar Drive",
+  description: "Learn C programming and logic to pilot a moon rover.",
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="en">
+      <body className={`${inter.variable} ${orbitron.variable} font-sans antialiased bg-background text-foreground`}>
+        <AudioProvider>
+          <GameProvider>
+            {children}
+          </GameProvider>
+        </AudioProvider>
+      </body>
+    </html>
+  );
+}

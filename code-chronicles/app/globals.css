@@ -1,0 +1,100 @@
+@import "tailwindcss";
+
+:root {
+  /* Sci-Fi Palette */
+  --background: #0b0d17;
+  /* Deep Space Blue */
+  --foreground: #e0e6ed;
+  /* Starlight White */
+
+  --primary: #00f0ff;
+  /* Neon Cyan */
+  --primary-glow: rgba(0, 240, 255, 0.5);
+
+  --secondary: #7000ff;
+  /* Electric Purple */
+  --secondary-glow: rgba(112, 0, 255, 0.5);
+
+  --accent: #ff003c;
+  /* Alert Red */
+
+  --surface: #15192b;
+  /* Dark Panel */
+  --surface-border: #2d3446;
+
+  --font-orbitron: 'Orbitron', sans-serif;
+  --font-inter: 'Inter', sans-serif;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter);
+  overflow-x: hidden;
+}
+
+/* Custom Utilities */
+.glass-panel {
+  background: rgba(10, 10, 15, 0.4);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+}
+
+.text-glow {
+  text-shadow: 0 0 20px rgba(0, 240, 255, 0.3);
+}
+
+.text-glow-gold {
+  text-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+}
+
+/* Subtle Gradient Animation for Text */
+.animate-gradient {
+  background-size: 200%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: gradient-move 5s ease infinite;
+}
+
+@keyframes gradient-move {
+  0% {
+    background-position: 0% 50%
+  }
+
+  50% {
+    background-position: 100% 50%
+  }
+
+  100% {
+    background-position: 0% 50%
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #000;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Landing Page Utilities */
+.text-stroke-cyan {
+  -webkit-text-stroke: 1px rgba(6, 182, 212, 0.5);
+  color: transparent;
+}
+
+.clip-path-polygon {
+  clip-path: polygon(10% 0, 100% 0, 100% 70%, 90% 100%, 0 100%, 0 30%);
+}
