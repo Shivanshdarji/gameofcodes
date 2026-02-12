@@ -27,10 +27,11 @@ export async function POST(req: Request) {
                 "Content-Length": buffer.length.toString(),
             },
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error generating speech:", error);
+        const errorMessage = error?.message || "Unknown error occurred";
         return NextResponse.json(
-            { error: "Failed to generate speech" },
+            { error: "Failed to generate speech", details: errorMessage },
             { status: 500 }
         );
     }

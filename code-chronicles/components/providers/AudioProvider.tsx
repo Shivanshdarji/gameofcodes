@@ -69,11 +69,31 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             if (savedVol) setVolumeState(parseFloat(savedVol));
         } catch (e) { }
 
-        // Auto-play attempt on mount
-        const timer = setTimeout(() => {
-            play();
-        }, 1000);
-        return () => clearTimeout(timer);
+        // Auto-play attempt on mount & User Interaction Fallback
+        const attemptPlay = () => {
+            play().catch(() => { });
+        };
+
+        const timer = setTimeout(attemptPlay, 1000);
+
+        const handleInteraction = () => {
+            attemptPlay();
+            // We can remove listeners if we want, but keeping them harmlessly checking is also fine 
+            // provided play() handles state. However, to be clean:
+            // logic to remove them is hard inside here without refs or careful effect structure.
+            // For now, let's just let the play() function handles "already playing" check?
+            // Actually, play() doesn't check isPlaying state, it just calls audioRef.current.play().
+            // Let's rely on the play() method's behavior.
+        };
+
+        window.addEventListener("click", handleInteraction);
+        window.addEventListener("keydown", handleInteraction);
+
+        return () => {
+            clearTimeout(timer);
+            window.removeEventListener("click", handleInteraction);
+            window.removeEventListener("keydown", handleInteraction);
+        };
     }, []);
 
     return (

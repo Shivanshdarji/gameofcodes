@@ -137,7 +137,7 @@ export default function Home() {
           transition={{ delay: 0.5, duration: 0.8 }}
           className="flex flex-col gap-4 pointer-events-auto min-w-[300px]"
         >
-          <Link href={user ? "/profile" : "/login"} className="w-full">
+          <Link href={user ? "/map" : "/login"} className="w-full">
             <Button
               size="lg"
               className="w-full relative overflow-hidden group bg-cyan-600/20 hover:bg-cyan-500 text-cyan-100 border border-cyan-500/30 hover:border-cyan-400 backdrop-blur-sm h-16 text-xl tracking-widest uppercase font-bold transition-all duration-300 shadow-[0_0_20px_rgba(6,182,212,0.1)] hover:shadow-[0_0_40px_rgba(6,182,212,0.4)] clip-path-polygon"

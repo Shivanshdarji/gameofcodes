@@ -307,6 +307,7 @@ export default function LevelPage() {
     // Fix: Use Ref to track latest code state for async runDemo
     const codeRef = useRef(code);
     useEffect(() => { codeRef.current = code; }, [code]);
+    const startTimeRef = useRef(Date.now());
 
     const [logs, setLogs] = useState<string[]>(["> System initialized...", "> Waiting for neural link..."]);
     const [showModal, setShowModal] = useState(false);
@@ -349,9 +350,16 @@ export default function LevelPage() {
     }, []);
 
     useEffect(() => {
-        successAudioRef.current = new Audio("/music/start.mp3");
-        failAudioRef.current = new Audio("/music/fail.mp3");
-        clickAudioRef.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3");
+        try {
+            successAudioRef.current = new Audio("/music/start.mp3?t=1");
+            successAudioRef.current.onerror = (e) => console.log("Audio Error start.mp3", e);
+
+            failAudioRef.current = new Audio("/music/fail.mp3?t=1");
+
+            clickAudioRef.current = new Audio("/music/click.mp3?t=1");
+        } catch (e) {
+            console.error("Audio init failed", e);
+        }
     }, []);
 
     useEffect(() => {
@@ -367,6 +375,7 @@ export default function LevelPage() {
         setSimulationSpeed(0);
         setManualStepIndex(0);
         setAiFeedback(null);
+        startTimeRef.current = Date.now();
     }, [levelId, config]);
 
     const handleTTS = async (text: string) => {
@@ -376,12 +385,24 @@ export default function LevelPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ text }),
             });
-            if (!res.ok) throw new Error("TTS Failed");
+
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({}));
+                console.warn("TTS API Error (Switching to fallback):", errorData);
+                throw new Error("API_FAILED");
+            }
+
             const blob = await res.blob();
             const audio = new Audio(URL.createObjectURL(blob));
             audio.play().catch(e => console.error("Audio playback error:", e));
         } catch (err) {
-            console.error(err);
+            console.log("Using native TTS fallback");
+            // Fallback to browser native TTS
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 1.0;
+            utterance.pitch = 1.0;
+            // distinct voice preference can be added here if needed
+            window.speechSynthesis.speak(utterance);
         }
     };
 
@@ -567,7 +588,9 @@ export default function LevelPage() {
                             setLogs(prev => [...prev, `> MISSION UPDATE: ${config.manualSteps[manualStepIndex + 1].instruction}`]);
                             setCode(prev => prev + "\n    ");
                         } else {
-                            completeLevel(levelId);
+                            const duration = Math.round((Date.now() - startTimeRef.current) / 1000);
+                            const lines = code.split('\n').length;
+                            completeLevel(levelId, { time_taken_seconds: duration, code_lines: lines });
                             setShowModal(true);
                         }
                     }, 3000);
@@ -593,7 +616,9 @@ export default function LevelPage() {
             setPhase("success");
             setLogs(prev => [...prev, "> SUCCESS: System Optimal."]);
             successAudioRef.current?.play().catch((e) => setLogs(p => [...p, "AUDIO ERR: " + e.message]));
-            completeLevel(levelId);
+            const duration = Math.round((Date.now() - startTimeRef.current) / 1000);
+            const lines = code.split('\n').length;
+            completeLevel(levelId, { time_taken_seconds: duration, code_lines: lines });
             setTimeout(() => setShowModal(true), 2000);
         } else {
             setPhase("error");

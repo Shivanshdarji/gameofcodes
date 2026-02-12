@@ -1,141 +1,215 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useGame } from "@/components/providers/GameProvider";
+import { useAuth } from "@/components/providers/AuthProvider";
 import { useRouter } from "next/navigation";
-import { useGame, UserProfile } from "@/components/providers/GameProvider";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Terminal, Shield, Cpu, Activity, Zap, Code, ChevronRight, LogOut, FileText, Home } from "lucide-react";
+import { User, Shield, Terminal, Activity, ChevronLeft, LogOut, Edit2 } from "lucide-react";
 import Link from "next/link";
+import { supabase } from "@/lib/supabase";
 
 export default function ProfilePage() {
+    const { user: gameUser, credits } = useGame();
+    const { signOut, user: authUser } = useAuth();
     const router = useRouter();
-    const { user, logout } = useGame();
-    const [mounted, setMounted] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [editName, setEditName] = useState("");
 
     useEffect(() => {
-        setMounted(true);
-        if (!user) {
-            router.push("/login"); // Redirect if not logged in
+        if (!authUser) {
+            // router.push('/login'); 
         }
-    }, [user, router]);
+    }, [authUser, router]);
 
-    if (!mounted || !user) return <div className="min-h-screen bg-[#050510]" />;
+    if (!gameUser) return null;
+
+    const handleSaveProfile = async () => {
+        if (!editName.trim()) return;
+
+        // GUEST MODE
+        if (!authUser) {
+            const updatedUser = { ...gameUser, username: editName };
+            localStorage.setItem("game_user", JSON.stringify(updatedUser));
+            // Force reload to pick up changes (since GameProvider doesn't expose a setter)
+            window.location.reload();
+            return;
+        }
+
+        // AUTH MODE
+        try {
+            const { error } = await supabase.from('profiles').update({ username: editName }).eq('id', gameUser.id);
+            if (error) {
+                if (error.code === 'PGRST205' || error.message.includes('find the table')) {
+                    alert("Database tables not found! Please run the setup SQL script.");
+                } else {
+                    throw error;
+                }
+            } else {
+                setIsEditing(false);
+                window.location.reload();
+            }
+        } catch (e: any) {
+            console.error(e);
+            alert(`Failed to update profile: ${e.message}`);
+        }
+    }
 
     return (
-        <div className="min-h-screen bg-[#050510] text-cyan-500 font-mono p-4 md:p-8 relative overflow-hidden">
-            {/* Background Grid */}
-            <div className="absolute inset-0 bg-[linear-gradient(rgba(0,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.03)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none" />
-
-            {/* Home Button */}
-            <Link href="/" className="fixed top-6 left-6 z-[100] group flex items-center gap-2 p-3 text-cyan-400 bg-black/50 hover:bg-cyan-950/80 border border-cyan-800 hover:border-cyan-400 rounded-xl transition-all shadow-[0_0_20px_rgba(0,0,0,0.5)] backdrop-blur-md">
-                <Home className="w-6 h-6 group-hover:scale-110 transition-transform" />
-                <span className="text-xs font-bold tracking-widest text-cyan-400 opacity-0 group-hover:opacity-100 transition-opacity -translate-x-2 group-hover:translate-x-0 duration-300">HOME</span>
-            </Link>
-
-            <div className="max-w-6xl mx-auto relative z-10 grid grid-cols-1 md:grid-cols-3 gap-8 pt-16 md:pt-0">
-
-                {/* LEFT COLUMN: Identity Card */}
-                <motion.div
-                    initial={{ x: -50, opacity: 0 }}
-                    animate={{ x: 0, opacity: 1 }}
-                    className="md:col-span-1 bg-[#0a0a1a] border border-cyan-500/20 rounded-xl p-6 h-fit"
-                >
-                    <div className="flex flex-col items-center mb-8">
-                        <div className="w-24 h-24 bg-cyan-500/10 rounded-full flex items-center justify-center border-2 border-cyan-500 shadow-[0_0_20px_rgba(6,182,212,0.3)] mb-4 relative">
-                            <Shield className="w-10 h-10 text-cyan-400" />
-                            <div className="absolute inset-0 rounded-full border border-cyan-400/30 animate-ping opacity-20" />
-                        </div>
-                        <h2 className="text-2xl font-bold text-white tracking-wider">{user.username}</h2>
-                        <span className="text-xs text-cyan-400 bg-cyan-900/30 px-2 py-1 rounded mt-2 border border-cyan-500/20">CLASS: CADET</span>
+        <div className="min-h-screen bg-[#050511] text-white font-sans selection:bg-cyan-500/30">
+            {/* Header */}
+            <div className="fixed top-0 left-0 w-full bg-black/50 backdrop-blur-xl border-b border-white/10 z-50">
+                <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+                    <Link href="/" className="flex items-center gap-2 text-white/60 hover:text-white transition-colors">
+                        <ChevronLeft className="w-5 h-5" />
+                        <span className="font-mono text-sm">RETURN_TO_BASE</span>
+                    </Link>
+                    <div className="font-orbitron font-bold text-xl tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">
+                        CADET DOSSIER
                     </div>
-
-                    <div className="space-y-4 text-sm border-t border-cyan-500/10 pt-6">
-                        <div className="flex justify-between">
-                            <span className="text-cyan-700">ID_HASH</span>
-                            <span className="text-cyan-300">{user.id.substring(0, 8)}...</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-cyan-700">JOINED</span>
-                            <span className="text-cyan-300">{new Date(user.data.joinedAt).toLocaleDateString()}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-cyan-700">STATUS</span>
-                            <span className="text-green-400 flex items-center gap-1"><div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" /> ONLINE</span>
-                        </div>
-                    </div>
-
-                    <button
-                        onClick={() => { logout(); router.push("/login"); }}
-                        className="w-full mt-8 py-3 flex items-center justify-center gap-2 border border-red-500/30 text-red-400 hover:bg-red-500/10 rounded transition-colors text-xs"
-                    >
-                        <LogOut className="w-3 h-3" />
-                        TERMINATE SESSION
+                    <button onClick={() => {
+                        if (!authUser) {
+                            // Guest Logout: Clear local data and reload
+                            localStorage.removeItem('game_user');
+                            // Also clear game state if we want a full reset, but clearing user is enough to prompt login
+                            window.location.href = '/login';
+                        } else {
+                            signOut();
+                        }
+                    }} className="flex items-center gap-2 text-red-400/60 hover:text-red-400 transition-colors">
+                        <LogOut className="w-4 h-4" />
+                        <span className="font-mono text-sm">TERMINATE_SESSION</span>
                     </button>
-                </motion.div>
+                </div>
+            </div>
 
-                {/* RIGHT COLUMN: Analysis & Stats */}
-                <div className="md:col-span-2 space-y-6">
+            <div className="pt-24 pb-12 px-6 max-w-7xl mx-auto">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
-                    {/* SKILL MATRIX */}
+                    {/* ID Card */}
                     <motion.div
-                        initial={{ y: 20, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        transition={{ delay: 0.1 }}
-                        className="bg-[#0a0a1a] border border-cyan-500/20 rounded-xl p-6"
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        className="col-span-1 bg-white/5 border border-white/10 rounded-2xl p-6 relative overflow-hidden h-fit"
                     >
-                        <div className="flex items-center gap-2 mb-6 border-b border-cyan-500/10 pb-2">
-                            <Activity className="w-5 h-5 text-cyan-400" />
-                            <h3 className="text-lg font-bold text-white">SKILL_MATRIX_ANALYSIS</h3>
+                        <div className="absolute top-0 right-0 p-4 opacity-10">
+                            <Shield className="w-32 h-32" />
                         </div>
 
-                        <div className="space-y-6">
-                            <SkillBar label="SYNTAX PROFICIENCY" value={user.data.skills.syntax} color="bg-blue-500" icon={<Code className="w-4 h-4" />} />
-                            <SkillBar label="LOGIC & ALGORITHMS" value={user.data.skills.logic} color="bg-purple-500" icon={<Cpu className="w-4 h-4" />} />
-                            <SkillBar label="CODING SPEED" value={user.data.skills.speed} color="bg-yellow-500" icon={<Zap className="w-4 h-4" />} />
-                        </div>
+                        <div className="relative z-10 flex flex-col items-center text-center">
+                            <div className="w-32 h-32 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 p-1 mb-4 shadow-[0_0_30px_rgba(6,182,212,0.4)]">
+                                <div className="w-full h-full rounded-full bg-black flex items-center justify-center overflow-hidden">
+                                    <User className="w-16 h-16 text-white/50" />
+                                </div>
+                            </div>
 
-                        <div className="mt-8 bg-cyan-900/10 p-4 rounded border border-cyan-500/10 text-xs leading-relaxed text-cyan-300/80">
-                            <strong>AI EVALUATION:</strong> User demonstrates promising adaptability. Syntax handling is within acceptable parameters. Recommended focus: increase logic puzzle complexity to stress-test higher cognitive functions.
+                            {isEditing ? (
+                                <div className="flex items-center gap-2 mb-2">
+                                    <input
+                                        value={editName}
+                                        onChange={(e) => setEditName(e.target.value)}
+                                        placeholder={gameUser.username}
+                                        className="bg-black/50 border border-white/20 rounded px-2 py-1 text-center"
+                                    />
+                                    <button onClick={handleSaveProfile} className="text-xs bg-cyan-500 px-2 py-1 rounded">SAVE</button>
+                                </div>
+                            ) : (
+                                <h2 className="text-2xl font-bold text-white mb-1 flex items-center gap-2">
+                                    {gameUser.username}
+                                    <button onClick={() => { setEditName(gameUser.username); setIsEditing(true); }} className="text-white/20 hover:text-white transition-colors">
+                                        <Edit2 className="w-4 h-4" />
+                                    </button>
+                                </h2>
+                            )}
+
+                            <div className="text-sm font-mono text-cyan-400 mb-6">ID: {gameUser.id}</div>
+
+                            <div className="w-full grid grid-cols-2 gap-4">
+                                <div className="bg-black/30 rounded-lg p-3 border border-white/5">
+                                    <div className="text-xs text-white/40 mb-1">Joined</div>
+                                    <div className="font-mono">{new Date(gameUser.data.joinedAt).toLocaleDateString()}</div>
+                                </div>
+                                <div className="bg-black/30 rounded-lg p-3 border border-white/5">
+                                    <div className="text-xs text-white/40 mb-1">Rank</div>
+                                    <div className="font-mono text-cyan-400">Cadet</div>
+                                </div>
+                            </div>
                         </div>
                     </motion.div>
 
-                    {/* MISSION RESUME */}
-                    <motion.div
-                        initial={{ y: 20, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        transition={{ delay: 0.2 }}
-                        className="grid grid-cols-2 gap-4"
-                    >
-                        <StatCard label="LINES_WRITTEN" value={user.data.stats.totalLinesOfCode} />
-                        <StatCard label="MISSIONS_CLEARED" value={user.data.stats.missionsCompleted} />
-                    </motion.div>
+                    {/* Stats & Skills */}
+                    <div className="col-span-1 lg:col-span-2 space-y-8">
 
-                    {/* ACTION */}
-                    <motion.button
-                        initial={{ scale: 0.9, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        transition={{ delay: 0.3 }}
-                        onClick={() => router.push("/level/2")}
-                        className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-6 rounded-xl shadow-[0_0_30px_rgba(6,182,212,0.2)] flex items-center justify-center gap-3 text-lg group transition-all"
-                    >
-                        <span>CONTINUE EXPEDITION</span>
-                        <ChevronRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
-                    </motion.button>
+                        {/* Core Stats */}
+                        <motion.div
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.1 }}
+                            className="grid grid-cols-1 md:grid-cols-3 gap-6"
+                        >
+                            <StatCard title="TOTAL CREDITS" value={credits.toLocaleString()} icon={<Terminal className="w-5 h-5 text-green-400" />} />
+                            <StatCard title="MISSIONS CLEARED" value={gameUser.data.stats.missionsCompleted.toString()} icon={<Shield className="w-5 h-5 text-blue-400" />} />
+                            <StatCard title="BUGS NEUTRALIZED" value={gameUser.data.stats.bugsFixed.toString()} icon={<Activity className="w-5 h-5 text-red-400" />} />
+                        </motion.div>
 
+                        {/* Skill Matrix */}
+                        <motion.div
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.2 }}
+                            className="bg-white/5 border border-white/10 rounded-2xl p-6"
+                        >
+                            <h3 className="text-lg font-bold font-orbitron mb-6 flex items-center gap-2">
+                                <Activity className="w-5 h-5 text-cyan-400" />
+                                SKILL MATRIX
+                            </h3>
+
+                            <div className="space-y-6">
+                                <SkillBar label="Syntax Mastery" value={gameUser.data.skills.syntax} color="bg-purple-500" />
+                                <SkillBar label="Logic Core" value={gameUser.data.skills.logic} color="bg-blue-500" />
+                                <SkillBar label="Processing Speed" value={gameUser.data.skills.speed} color="bg-yellow-500" />
+                            </div>
+                        </motion.div>
+
+                        <div className="flex gap-4">
+                            <Link href="/map" className="flex-1 bg-gradient-to-r from-emerald-900/50 to-cyan-900/50 hover:from-emerald-800/50 hover:to-cyan-800/50 border border-emerald-500/30 rounded-xl p-6 text-center group transition-all">
+                                <div className="text-xl font-bold text-emerald-400 group-hover:scale-105 transition-transform">DEPLOY TO SECTOR</div>
+                                <div className="text-sm text-white/40 mt-2">Resume active mission and select levels</div>
+                            </Link>
+
+                            <Link href="/analysis" className="flex-1 bg-gradient-to-r from-cyan-900/50 to-blue-900/50 hover:from-cyan-800/50 hover:to-blue-800/50 border border-cyan-500/30 rounded-xl p-6 text-center group transition-all">
+                                <div className="text-xl font-bold text-cyan-400 group-hover:scale-105 transition-transform">Run Deep Analysis</div>
+                                <div className="text-sm text-white/40 mt-2">View detailed performance charts and history logs</div>
+                            </Link>
+                        </div>
+
+                    </div>
                 </div>
             </div>
         </div>
     );
 }
 
-function SkillBar({ label, value, color, icon }: { label: string, value: number, color: string, icon: any }) {
+function StatCard({ title, value, icon }: { title: string, value: string, icon: any }) {
+    return (
+        <div className="bg-white/5 border border-white/10 rounded-xl p-5 hover:border-white/20 transition-colors">
+            <div className="flex items-center justify-between mb-2">
+                <div className="text-xs font-mono text-white/40">{title}</div>
+                {icon}
+            </div>
+            <div className="text-2xl font-bold font-orbitron">{value}</div>
+        </div>
+    )
+}
+
+function SkillBar({ label, value, color }: { label: string, value: number, color: string }) {
     return (
         <div>
-            <div className="flex justify-between text-xs mb-2 text-white/80">
-                <span className="flex items-center gap-2">{icon} {label}</span>
-                <span>{value}%</span>
+            <div className="flex justify-between mb-2">
+                <span className="text-sm text-white/80">{label}</span>
+                <span className="font-mono text-cyan-400">{value}%</span>
             </div>
-            <div className="h-2 w-full bg-[#111] rounded-full overflow-hidden border border-white/5">
+            <div className="h-2 w-full bg-black/50 rounded-full overflow-hidden">
                 <motion.div
                     initial={{ width: 0 }}
                     animate={{ width: `${value}%` }}
@@ -144,14 +218,5 @@ function SkillBar({ label, value, color, icon }: { label: string, value: number,
                 />
             </div>
         </div>
-    );
-}
-
-function StatCard({ label, value }: { label: string, value: number }) {
-    return (
-        <div className="bg-[#0a0a1a] border border-cyan-500/20 p-6 rounded-xl flex flex-col items-center justify-center">
-            <h4 className="text-xs text-cyan-600 mb-2">{label}</h4>
-            <div className="text-3xl font-bold text-white">{value}</div>
-        </div>
-    );
+    )
 }

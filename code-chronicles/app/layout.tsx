@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Orbitron } from "next/font/google";
 import "./globals.css";
+import { AuthProvider } from "@/components/providers/AuthProvider";
 import { AudioProvider } from "@/components/providers/AudioProvider";
 import { GameProvider } from "@/components/providers/GameProvider";
 
@@ -20,11 +21,13 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.variable} ${orbitron.variable} font-sans antialiased bg-background text-foreground`}>
-        <AudioProvider>
-          <GameProvider>
-            {children}
-          </GameProvider>
-        </AudioProvider>
+        <AuthProvider>
+          <AudioProvider>
+            <GameProvider>
+              {children}
+            </GameProvider>
+          </AudioProvider>
+        </AuthProvider>
       </body>
     </html>
   );
