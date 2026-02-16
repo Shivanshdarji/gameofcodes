@@ -25,6 +25,7 @@
     "socket.io-client": "^4.8.3",
     "tailwind-merge": "^3.4.0",
     "three": "^0.181.2",
+    "tsx": "^4.21.0",
     "zustand": "^5.0.9"
   },
   "devDependencies": {
@@ -35,7 +36,6 @@
     "eslint": "^9",
     "eslint-config-next": "16.0.7",
     "tailwindcss": "^4",
-    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }
