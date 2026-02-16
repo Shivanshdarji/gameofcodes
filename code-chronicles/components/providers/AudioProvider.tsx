@@ -5,6 +5,8 @@ import React, { createContext, useContext, useEffect, useRef, useState } from "r
 interface AudioContextType {
     volume: number;
     setVolume: (vol: number) => void;
+    mentorVolume: number;
+    setMentorVolume: (vol: number) => void;
     play: () => Promise<void>;
     pause: () => void;
     isPlaying: boolean;
@@ -14,6 +16,7 @@ const AudioContext = createContext<AudioContextType | null>(null);
 
 export function AudioProvider({ children }: { children: React.ReactNode }) {
     const [volume, setVolumeState] = useState(0.3);
+    const [mentorVolume, setMentorVolumeState] = useState(1.0);
     const [isPlaying, setIsPlaying] = useState(false);
     const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -40,9 +43,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
     const setVolume = (vol: number) => {
         setVolumeState(vol);
-        // Optional: Persist to localStorage
         try {
             localStorage.setItem("game_audio_volume", vol.toString());
+        } catch (e) { }
+    };
+
+    const setMentorVolume = (vol: number) => {
+        setMentorVolumeState(vol);
+        try {
+            localStorage.setItem("game_mentor_volume", vol.toString());
         } catch (e) { }
     };
 
@@ -67,6 +76,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         try {
             const savedVol = localStorage.getItem("game_audio_volume");
             if (savedVol) setVolumeState(parseFloat(savedVol));
+
+            const savedMentorVol = localStorage.getItem("game_mentor_volume");
+            if (savedMentorVol) setMentorVolumeState(parseFloat(savedMentorVol));
         } catch (e) { }
 
         // Auto-play attempt on mount & User Interaction Fallback
@@ -78,12 +90,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
         const handleInteraction = () => {
             attemptPlay();
-            // We can remove listeners if we want, but keeping them harmlessly checking is also fine 
-            // provided play() handles state. However, to be clean:
-            // logic to remove them is hard inside here without refs or careful effect structure.
-            // For now, let's just let the play() function handles "already playing" check?
-            // Actually, play() doesn't check isPlaying state, it just calls audioRef.current.play().
-            // Let's rely on the play() method's behavior.
         };
 
         window.addEventListener("click", handleInteraction);
@@ -97,7 +103,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }, []);
 
     return (
-        <AudioContext.Provider value={{ volume, setVolume, play, pause, isPlaying }}>
+        <AudioContext.Provider value={{ volume, setVolume, mentorVolume, setMentorVolume, play, pause, isPlaying }}>
             {children}
         </AudioContext.Provider>
     );

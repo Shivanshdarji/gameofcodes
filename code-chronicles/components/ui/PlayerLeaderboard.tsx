@@ -39,8 +39,8 @@ export default function PlayerLeaderboard({ players, currentPlayerId }: PlayerLe
                         <div
                             key={player.id}
                             className={`flex items-center gap-3 p-2 rounded-lg ${isCurrentPlayer
-                                    ? 'bg-cyan-900/30 border border-cyan-500/50'
-                                    : 'bg-black/30 border border-white/10'
+                                ? 'bg-cyan-900/30 border border-cyan-500/50'
+                                : 'bg-black/30 border border-white/10'
                                 } ${player.isEliminated ? 'opacity-50' : ''}`}
                         >
                             {/* Rank */}
@@ -76,7 +76,7 @@ export default function PlayerLeaderboard({ players, currentPlayerId }: PlayerLe
                                     <span>
                                         {player.isEliminated
                                             ? 'Eliminated'
-                                            : `${player.distanceToSatellite.toFixed(1)}m away`
+                                            : `${(player.distanceToSatellite || 0).toFixed(1)}m away`
                                         }
                                     </span>
                                 </div>

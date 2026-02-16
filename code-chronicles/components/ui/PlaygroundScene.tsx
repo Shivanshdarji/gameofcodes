@@ -5,6 +5,8 @@ import { useGLTF, Environment, Sparkles, Stars, PerspectiveCamera, OrbitControls
 import { useRef, useEffect, useState, useMemo } from "react";
 import * as THREE from "three";
 import { useGame } from "@/components/providers/GameProvider";
+import { useGraphics } from "@/components/providers/GraphicsProvider";
+import SimpleRover from "./SimpleRover";
 
 // --- Types ---
 export type Command =
@@ -33,6 +35,7 @@ export interface PlaygroundSceneProps {
     currentPlayerId?: string;
     satellitePosition?: [number, number, number];
     onPlayerReachedSatellite?: () => void;
+    onPositionUpdate?: (position: [number, number, number], rotation: number) => void;
 }
 
 // --- Constants ---
@@ -94,7 +97,8 @@ export default function PlaygroundScene({
     allPlayers = [],
     currentPlayerId,
     satellitePosition: multiplayerSatellitePos,
-    onPlayerReachedSatellite
+    onPlayerReachedSatellite,
+    onPositionUpdate
 }: PlaygroundSceneProps) {
     // Calculate parallel starting positions for multiplayer
     const getStartingPosition = (playerIndex: number, totalPlayers: number): [number, number, number] => {
@@ -194,9 +198,12 @@ export default function PlaygroundScene({
         setSatellitePos([0, 5, -30]);
     }, [resetTrigger]);
 
+    // --- Graphics Settings ---
+    const { quality, shadows, resolution, particleCount } = useGraphics();
+
     return (
         <div className="w-full h-full bg-black rounded-lg overflow-hidden border border-white/10 relative">
-            <Canvas shadows dpr={[1, 2]}> {/* dpr for sharper rendering */}
+            <Canvas shadows={shadows} dpr={[1, resolution]}> {/* dpr for sharper rendering */}
                 {/* Camera Rig that maps OrbitControls target to Rover */}
                 <CameraRig targetPos={roverPos} />
                 <PerspectiveCamera makeDefault position={[0, 3, 12]} fov={60} />
@@ -218,7 +225,7 @@ export default function PlaygroundScene({
                 <directionalLight
                     position={[50, 50, 25]}
                     intensity={2}
-                    castShadow
+                    castShadow={shadows}
                     shadow-mapSize={[2048, 2048]}
                 />
                 <pointLight position={[0, 5, 0]} intensity={1} color="#06b6d4" distance={30} />
@@ -226,8 +233,8 @@ export default function PlaygroundScene({
                 <spotLight position={[-50, 20, -50]} intensity={5} color="#a855f7" angle={0.5} penumbra={1} />
 
                 {/* Environment - Glowing Stars */}
-                <Stars radius={300} depth={100} count={2000} factor={6} saturation={0} fade speed={1} />
-                <Sparkles size={6} scale={[200, 50, 200]} count={50} speed={0.5} opacity={0.6} color="#ffffff" />
+                <Stars radius={300} depth={100} count={quality === 'low' ? 500 : 2000} factor={6} saturation={0} fade speed={1} />
+                <Sparkles size={6} scale={[200, 50, 200]} count={quality === 'low' ? 10 : 50} speed={0.5} opacity={0.6} color="#ffffff" />
                 <fog attach="fog" args={['#050505', 10, 120]} />
 
                 {/* --- HUD SCOREBOARD --- */}
@@ -269,8 +276,10 @@ export default function PlaygroundScene({
                             setRoverPos(pos);
                             setRoverRot(rot);
                             setShakeIntensity(isMoving ? 0.2 : 0);
+                            if (onPositionUpdate) onPositionUpdate(pos, rot);
                         }}
                         onComplete={onComplete}
+                        onPositionUpdate={onPositionUpdate}
                         onCheckCollisions={(pos: number[]) => {
                             // Check Boundaries (Crash if out of bounds)
                             if (Math.abs(pos[0]) > BOUNDARY_SIZE || Math.abs(pos[2]) > BOUNDARY_SIZE) {
@@ -358,7 +367,37 @@ export default function PlaygroundScene({
 }
 
 function MoonSurface() {
-    // Load the moon surface model
+    const { quality } = useGraphics();
+
+    // Load the moon surface model ONLY if not low quality
+    // We can't conditionally call useGLTF easily inside a hook if we want to follow rules of hooks perfectly
+    // but we can just return early if quality is low, effectively skipping the heavy render, 
+    // though the hook might still preload. 
+    // actually useGLTF might suspend. 
+    // Better: split into two components or just let it load but don't render it? 
+    // If we want to save memory we should not load it. 
+    // But hooks order... 
+    // Let's us a separate component for the HighQualitySurface
+
+    return quality === 'low' ? (
+        <group position={[0, -0.5, 0]}>
+            <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, -5, 0]}>
+                <planeGeometry args={[WIRE_SIZE * 3, WIRE_SIZE * 3, 32, 32]} />
+                <meshStandardMaterial color="#222" wireframe={true} />
+            </mesh>
+            <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, -5.1, 0]}>
+                <planeGeometry args={[WIRE_SIZE * 3, WIRE_SIZE * 3]} />
+                <meshStandardMaterial color="#000" />
+            </mesh>
+        </group>
+    ) : (
+        <HighQualityMoonSurface />
+    );
+}
+
+const WIRE_SIZE = 1500;
+
+function HighQualityMoonSurface() {
     const { scene } = useGLTF("/moon.glb");
 
     // Clone logic with material fix and error handling
@@ -435,9 +474,11 @@ interface RoverControllerProps {
     onUpdate: (pos: [number, number, number], rot: number, isMoving: boolean) => void;
     onComplete: () => void;
     onCheckCollisions: (pos: number[]) => void;
+    onPositionUpdate?: (position: [number, number, number], rotation: number) => void;
 }
 
 // --- Other Player Rover (Simple representation) ---
+// --- Other Player Rover (Real 3D Model) ---
 function OtherPlayerRover({
     playerName,
     color,
@@ -449,56 +490,45 @@ function OtherPlayerRover({
     position: [number, number, number];
     rotation: number;
 }) {
+    const { scene } = useGLTF("/mars_rover.glb");
+
+    // Clone the model for each player instance
+    const clonedScene = useMemo(() => {
+        const c = scene.clone();
+        c.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh) {
+                const m = child as THREE.Mesh;
+                m.castShadow = true;
+                m.receiveShadow = true;
+            }
+        });
+        return c;
+    }, [scene]);
+
     return (
         <group position={position} rotation={[0, rotation, 0]}>
-            <group position={[0, 0.5, 0]}>
-                {/* Simple rover representation using boxes */}
-                <mesh castShadow>
-                    <boxGeometry args={[1.5, 0.8, 2]} />
-                    <meshStandardMaterial
-                        color={color}
-                        emissive={color}
-                        emissiveIntensity={0.3}
-                        metalness={0.6}
-                        roughness={0.4}
-                    />
-                </mesh>
-
-                {/* Wheels */}
-                <mesh position={[-0.6, -0.4, 0.7]} rotation={[0, 0, Math.PI / 2]} castShadow>
-                    <cylinderGeometry args={[0.3, 0.3, 0.2, 16]} />
-                    <meshStandardMaterial color="#333" />
-                </mesh>
-                <mesh position={[0.6, -0.4, 0.7]} rotation={[0, 0, Math.PI / 2]} castShadow>
-                    <cylinderGeometry args={[0.3, 0.3, 0.2, 16]} />
-                    <meshStandardMaterial color="#333" />
-                </mesh>
-                <mesh position={[-0.6, -0.4, -0.7]} rotation={[0, 0, Math.PI / 2]} castShadow>
-                    <cylinderGeometry args={[0.3, 0.3, 0.2, 16]} />
-                    <meshStandardMaterial color="#333" />
-                </mesh>
-                <mesh position={[0.6, -0.4, -0.7]} rotation={[0, 0, Math.PI / 2]} castShadow>
-                    <cylinderGeometry args={[0.3, 0.3, 0.2, 16]} />
-                    <meshStandardMaterial color="#333" />
-                </mesh>
+            <group position={[0, 0.2, 0]}>
+                {/* Rotate model 90 deg (positive) to align X-axis model with Z-axis movement, same as local rover */}
+                <primitive object={clonedScene} scale={[0.5, 0.5, 0.5]} rotation={[0, Math.PI / 2, 0]} />
 
                 {/* Player name label */}
-                <Html position={[0, 1.5, 0]} center>
+                <Html position={[0, 1.8, 0]} center>
                     <div className="bg-black/80 px-2 py-1 rounded text-white text-xs font-bold border border-white/30"
-                        style={{ color: color }}>
+                        style={{ color: color, whiteSpace: 'nowrap' }}>
                         {playerName}
                     </div>
                 </Html>
 
-                {/* Colored glow */}
-                <pointLight position={[0, 0.5, 1]} intensity={3} color={color} distance={8} />
+                {/* Colored glow to identify different players */}
+                <pointLight position={[0, 0.5, 0]} intensity={3} color={color} distance={6} />
+                <Sparkles count={10} scale={[2, 2, 2]} position={[0, 0.5, 0]} size={2} speed={1} opacity={0.5} color={color} />
             </group>
         </group>
     );
 }
 
 // --- Rover Controller (Main Player) ---
-function RoverController({ position, rotation, commandQueue, isPlaying, onUpdate, onComplete, onCheckCollisions }: RoverControllerProps) {
+function RoverController({ position, rotation, commandQueue, isPlaying, onUpdate, onComplete, onCheckCollisions, onPositionUpdate }: RoverControllerProps) {
     const roverRef = useRef<THREE.Group>(null);
     const cmdIndex = useRef(0);
     const progress = useRef(0); // 0 to 1 for current command
@@ -506,6 +536,8 @@ function RoverController({ position, rotation, commandQueue, isPlaying, onUpdate
     const startRot = useRef(0);
     const targetPos = useRef(new THREE.Vector3(0, 0, 0));
     const targetRot = useRef(0);
+
+    const { quality } = useGraphics();
 
     // Ref to avoid stale closure in useFrame
     const onCheckCollisionsRef = useRef(onCheckCollisions);
@@ -640,15 +672,23 @@ function RoverController({ position, rotation, commandQueue, isPlaying, onUpdate
 
     return (
         <group ref={roverRef} position={[0, 0.2, 0]}> {/* Lifted Rover slightly */}
-            {/* Rotate model 90 deg (positive) to align X-axis model with Z-axis movement */}
-            <primitive object={clonedScene} scale={[0.5, 0.5, 0.5]} rotation={[0, Math.PI / 2, 0]} />
+            {quality === 'low' ? (
+                <group rotation={[0, Math.PI, 0]}> {/* Rotate 180 to face forward correctly for SimpleRover */}
+                    <SimpleRover />
+                </group>
+            ) : (
+                <>
+                    {/* Rotate model 90 deg (positive) to align X-axis model with Z-axis movement */}
+                    <primitive object={clonedScene} scale={[0.5, 0.5, 0.5]} rotation={[0, Math.PI / 2, 0]} />
 
-            {/* Headlight */}
-            <spotLight position={[0, 1, 0.5]} target-position={[0, 0, 5]} angle={0.5} penumbra={0.5} intensity={8} distance={25} color="#ccffff" />
+                    {/* Headlight */}
+                    <spotLight position={[0, 1, 0.5]} target-position={[0, 0, 5]} angle={0.5} penumbra={0.5} intensity={8} distance={25} color="#ccffff" />
 
-            {/* Engine Glow */}
-            <pointLight position={[0, 0.5, -1]} intensity={2} color="#00ffff" distance={2} />
-            <Sparkles count={20} scale={[1, 1, 1]} position={[0, 0.2, -1.2]} size={2} speed={5} opacity={0.5} color="#00ffff" />
+                    {/* Engine Glow */}
+                    <pointLight position={[0, 0.5, -1]} intensity={2} color="#00ffff" distance={2} />
+                    <Sparkles count={20} scale={[1, 1, 1]} position={[0, 0.2, -1.2]} size={2} speed={5} opacity={0.5} color="#00ffff" />
+                </>
+            )}
         </group>
     )
 }

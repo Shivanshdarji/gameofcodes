@@ -1,11 +1,16 @@
-import { OpenAI } from "openai";
-import { NextResponse } from "next/server";
+import { NextResponse } from 'next/server';
+import OpenAI from 'openai';
 
-const openai = new OpenAI({
+// Initialize OpenAI
+const openai = process.env.OPENAI_API_KEY ? new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
-});
+}) : null;
 
 export async function POST(req: Request) {
+    if (!openai) {
+        return NextResponse.json({ error: "OpenAI API Key missing" }, { status: 500 });
+    }
+
     try {
         const { text } = await req.json();
 
@@ -15,7 +20,7 @@ export async function POST(req: Request) {
 
         const mp3 = await openai.audio.speech.create({
             model: "tts-1",
-            voice: "onyx",
+            voice: "onyx", // Deep, authoritative, astronaut-like
             input: text,
         });
 
@@ -27,12 +32,9 @@ export async function POST(req: Request) {
                 "Content-Length": buffer.length.toString(),
             },
         });
-    } catch (error: any) {
-        console.error("Error generating speech:", error);
-        const errorMessage = error?.message || "Unknown error occurred";
-        return NextResponse.json(
-            { error: "Failed to generate speech", details: errorMessage },
-            { status: 500 }
-        );
+
+    } catch (error) {
+        console.error("TTS Error:", error);
+        return NextResponse.json({ error: "Failed to generate speech" }, { status: 500 });
     }
 }

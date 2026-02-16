@@ -5,24 +5,33 @@ import { useGLTF, Environment, Sparkles, Stars, PerspectiveCamera, OrbitControls
 import { useRef, useEffect } from "react";
 import * as THREE from "three";
 
+import { useGraphics } from "@/components/providers/GraphicsProvider";
+import SimpleRover from "./SimpleRover";
+
 // Add direction prop to interface
 export default function LevelScene({ isSuccess, speed = 0, scale = 0.5, direction = "forward" }: { isSuccess: boolean; speed?: number; scale?: number; direction?: "forward" | "left" | "right" | "random" }) {
+    const { quality, shadows, resolution } = useGraphics();
+
     return (
         <div className="w-full h-full bg-black/50 rounded-2xl overflow-hidden border border-white/10 relative shadow-[0_0_50px_rgba(0,0,0,0.5)]">
-            <Canvas>
+            <Canvas shadows={shadows} dpr={[1, resolution]}>
                 <PerspectiveCamera makeDefault position={[6, 2, 6]} fov={50} />
                 <OrbitControls enableZoom={true} enablePan={false} maxPolarAngle={Math.PI / 1.5} minPolarAngle={Math.PI / 4} autoRotate={!isSuccess && speed > 0 && direction === "random"} autoRotateSpeed={speed * 2} />
 
                 <ambientLight intensity={0.5} />
-                <spotLight position={[10, 10, 10]} angle={0.25} penumbra={1} intensity={1} castShadow />
+                <spotLight position={[10, 10, 10]} angle={0.25} penumbra={1} intensity={1} castShadow={shadows} />
                 <pointLight position={[-10, 5, -10]} intensity={0.5} color="#ff003c" />
 
-                <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
-                <Sparkles count={500} scale={10} size={2} speed={0.4} opacity={0.5} color="#00f0ff" />
+                <Stars radius={100} depth={50} count={quality === 'low' ? 1000 : 5000} factor={4} saturation={0} fade speed={1} />
+                <Sparkles count={quality === 'low' ? 100 : 500} scale={10} size={2} speed={0.4} opacity={0.5} color="#00f0ff" />
 
                 <group position={[0, 0.5, 0]}>
                     <Center>
-                        <RoverModel isSuccess={isSuccess} speed={speed} scale={scale} direction={direction} />
+                        {quality === 'low' ? (
+                            <SimpleRover />
+                        ) : (
+                            <RoverModel isSuccess={isSuccess} speed={speed} scale={scale} direction={direction} />
+                        )}
                     </Center>
                 </group>
 

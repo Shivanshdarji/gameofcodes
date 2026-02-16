@@ -3,6 +3,7 @@ import { Inter, Orbitron } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/components/providers/AuthProvider";
 import { AudioProvider } from "@/components/providers/AudioProvider";
+import { GraphicsProvider } from "@/components/providers/GraphicsProvider";
 import { GameProvider } from "@/components/providers/GameProvider";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -23,9 +24,11 @@ export default function RootLayout({
       <body className={`${inter.variable} ${orbitron.variable} font-sans antialiased bg-background text-foreground`}>
         <AuthProvider>
           <AudioProvider>
-            <GameProvider>
-              {children}
-            </GameProvider>
+            <GraphicsProvider>
+              <GameProvider>
+                {children}
+              </GameProvider>
+            </GraphicsProvider>
           </AudioProvider>
         </AuthProvider>
       </body>
