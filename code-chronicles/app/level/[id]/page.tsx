@@ -351,12 +351,12 @@ export default function LevelPage() {
 
     useEffect(() => {
         try {
-            successAudioRef.current = new Audio("/music/start.mp3?t=1");
+            successAudioRef.current = new Audio("/music/start.mp3");
             successAudioRef.current.onerror = (e) => console.log("Audio Error start.mp3", e);
 
-            failAudioRef.current = new Audio("/music/fail.mp3?t=1");
+            failAudioRef.current = new Audio("/music/fail.mp3");
 
-            clickAudioRef.current = new Audio("/music/click.mp3?t=1");
+            clickAudioRef.current = new Audio("/music/click.mp3");
         } catch (e) {
             console.error("Audio init failed", e);
         }

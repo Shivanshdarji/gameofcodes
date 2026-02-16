@@ -14,6 +14,7 @@ interface Player {
     isEliminated: boolean;
     submittedCode: Command[] | null;
     distanceToSatellite: number;
+    hasSubmitted?: boolean;
 }
 
 interface GameState {
@@ -27,7 +28,6 @@ interface GameState {
     currentTurnPlayer: string | null;
     isHost: boolean;
     winner: { id: string; name: string; color: string } | null;
-    allPlayersCommands?: Array<{ id: string; name: string; color: string; commands: any[] }>;
 }
 
 export function useMultiplayer() {
@@ -49,7 +49,16 @@ export function useMultiplayer() {
     const socketRef = useRef<Socket | null>(null);
 
     useEffect(() => {
-        const newSocket = io('http://localhost:3001');
+        // Use environment variable for socket URL, or default to undefined (which means relative path/window.location)
+        // or strictly localhost for dev if needed.
+        // For production on same domain, undefined (no arg) is often enough for socket.io-client to guess.
+        // But to be safe and explicit:
+        const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3001' : undefined);
+
+        const newSocket = io(socketUrl || undefined, {
+            path: '/socket.io',
+            addTrailingSlash: false,
+        });
         socketRef.current = newSocket;
         setSocket(newSocket);
 
@@ -58,13 +67,17 @@ export function useMultiplayer() {
             setConnected(true);
         });
 
+        newSocket.on('connect_error', (err) => {
+            console.error('Socket connection error:', err);
+        });
+
         newSocket.on('disconnect', () => {
             console.log('Disconnected from multiplayer server');
             setConnected(false);
         });
 
         // Player events
-        newSocket.on('player-joined', ({ players, newPlayer }) => {
+        newSocket.on('player-joined', ({ players }) => {
             setGameState(prev => ({
                 ...prev,
                 players: players
@@ -112,14 +125,20 @@ export function useMultiplayer() {
 
         newSocket.on('code-submitted', ({ playerId, playerName }) => {
             console.log(`${playerName} submitted code`);
+            setGameState(prev => ({
+                ...prev,
+                players: prev.players.map(p =>
+                    p.id === playerId ? { ...p, hasSubmitted: true } : p
+                )
+            }));
         });
 
         newSocket.on('execution-started', ({ players }) => {
             setGameState(prev => ({
                 ...prev,
                 gamePhase: 'executing',
-                // Store all players' commands for parallel execution
-                allPlayersCommands: players
+                // Update players with their submitted code so we can render/execute
+                players: players
             }));
         });
 
@@ -177,9 +196,22 @@ export function useMultiplayer() {
                 gamePhase,
                 codingTimer: 30,
                 winner: null,
-                allPlayersCommands: undefined
+                players: prev.players.map(p => ({ ...p, submittedCode: null, hasSubmitted: false }))
             }));
         });
+
+        newSocket.on('coding-phase-restarted', ({ codingTimer }) => {
+            setGameState(prev => ({
+                ...prev,
+                gamePhase: 'coding',
+                codingTimer,
+                // Reset submission status in local state for UI
+                currentPlayer: prev.currentPlayer ? { ...prev.currentPlayer, submittedCode: null, hasSubmitted: false } : null,
+                players: prev.players.map(p => ({ ...p, submittedCode: null, hasSubmitted: false }))
+            }));
+        });
+
+        setGameState(prev => ({ ...prev, hasSubmitted: false })); // Reset local submission state if tracked
 
         return () => {
             newSocket.close();
@@ -193,13 +225,13 @@ export function useMultiplayer() {
                 return;
             }
 
-            socketRef.current.emit('create-room', playerName, (response: any) => {
+            socketRef.current.emit('create-room', playerName, (response: { success: boolean; roomId?: string; player?: Player; error?: string }) => {
                 if (response.success) {
                     setGameState(prev => ({
                         ...prev,
-                        roomId: response.roomId,
-                        currentPlayer: response.player,
-                        players: [response.player],
+                        roomId: response.roomId || null,
+                        currentPlayer: response.player || null,
+                        players: response.player ? [response.player] : [],
                         isHost: true
                     }));
                 }
@@ -215,12 +247,12 @@ export function useMultiplayer() {
                 return;
             }
 
-            socketRef.current.emit('join-room', roomId, playerName, (response: any) => {
+            socketRef.current.emit('join-room', roomId, playerName, (response: { success: boolean; roomId?: string; player?: Player; error?: string }) => {
                 if (response.success) {
                     setGameState(prev => ({
                         ...prev,
-                        roomId: response.roomId,
-                        currentPlayer: response.player,
+                        roomId: response.roomId || null,
+                        currentPlayer: response.player || null,
                         isHost: false
                     }));
                 }
@@ -264,6 +296,11 @@ export function useMultiplayer() {
         socketRef.current.emit('start-next-level', gameState.roomId);
     }, [gameState.roomId]);
 
+    const reportExecutionFinished = useCallback(() => {
+        if (!socketRef.current || !gameState.roomId) return;
+        socketRef.current.emit('player-execution-finished', gameState.roomId);
+    }, [gameState.roomId]);
+
     return {
         connected,
         gameState,
@@ -275,6 +312,7 @@ export function useMultiplayer() {
         updatePosition,
         playerReachedSatellite,
         playerCrashed,
-        startNextLevel
+        startNextLevel,
+        reportExecutionFinished
     };
 }

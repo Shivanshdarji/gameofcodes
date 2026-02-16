@@ -54,55 +54,54 @@ export default function PlaygroundPage() {
     const [resetTrigger, setResetTrigger] = useState(0);
     const [collectedItems, setCollectedItems] = useState<string[]>([]);
     const [showPopup, setShowPopup] = useState<{ title: string, desc: string } | null>(null);
+    const [attempts, setAttempts] = useState(0);
+
+    // Reset attempts on level change
+    useEffect(() => {
+        setAttempts(0);
+    }, [resetTrigger]);
 
     // Parse Code Logic (Simple Interpreter)
+    const parseCode = (sourceCode: string): Command[] => {
+        const commands: Command[] = [];
+        const lines = sourceCode.split('\n');
+
+        lines.forEach((line) => {
+            const trimmed = line.trim();
+            if (trimmed.startsWith("//") || trimmed === "") return;
+            const cleanLine = trimmed.split("//")[0].trim();
+
+            const moveMatch = cleanLine.match(/move_forward\(\s*(\d+)\s*\);?/);
+            const turnLeftMatch = cleanLine.match(/turn_left\(\s*(\d+)\s*\);?/);
+            const turnRightMatch = cleanLine.match(/turn_right\(\s*(\d+)\s*\);?/);
+            const collectMatch = cleanLine.match(/collect\(\s*\);?/);
+            const scanMatch = cleanLine.match(/scan\(\s*\);?/);
+
+            if (moveMatch) commands.push({ type: "MOVE", value: parseInt(moveMatch[1]) });
+            else if (turnLeftMatch) commands.push({ type: "TURN", value: parseInt(turnLeftMatch[1]) });
+            else if (turnRightMatch) commands.push({ type: "TURN", value: -parseInt(turnRightMatch[1]) });
+            else if (collectMatch) commands.push({ type: "COLLECT" });
+            else if (scanMatch) commands.push({ type: "SCAN" });
+        });
+        return commands;
+    };
+
     const handleRun = () => {
         setIsPlaying(false);
         setCommandQueue([]);
         setLogs(prev => [...prev, "> Compiling..."]);
 
-        // Very basic parsing regex
-        const commands: Command[] = [];
-        const lines = code.split('\n');
-
-        let error = null;
-
         try {
-            lines.forEach((line, idx) => {
-                const trimmed = line.trim();
-                // Skip full line comments or empty lines
-                if (trimmed.startsWith("//") || trimmed === "") return;
-
-                // Remove trailing comments from the line (e.g. "move_forward(10); // comment")
-                const cleanLine = trimmed.split("//")[0].trim();
-
-                // Regex matches: commandName ( spaces value spaces ) ;
-                const moveMatch = cleanLine.match(/move_forward\(\s*(\d+)\s*\);?/);
-                const turnLeftMatch = cleanLine.match(/turn_left\(\s*(\d+)\s*\);?/);
-                const turnRightMatch = cleanLine.match(/turn_right\(\s*(\d+)\s*\);?/);
-                const collectMatch = cleanLine.match(/collect\(\s*\);?/);
-                const scanMatch = cleanLine.match(/scan\(\s*\);?/);
-
-                if (moveMatch) {
-                    const val = parseInt(moveMatch[1]);
-                    commands.push({ type: "MOVE", value: val });
-                } else if (turnLeftMatch) {
-                    const val = parseInt(turnLeftMatch[1]);
-                    commands.push({ type: "TURN", value: val }); // Left is positive rotation
-                } else if (turnRightMatch) {
-                    const val = parseInt(turnRightMatch[1]);
-                    commands.push({ type: "TURN", value: -val }); // Right is negative
-                } else if (collectMatch) {
-                    commands.push({ type: "COLLECT" });
-                } else if (scanMatch) {
-                    commands.push({ type: "SCAN" });
-                }
-            });
+            const commands = parseCode(code);
 
             if (commands.length === 0) {
                 setLogs(prev => [...prev, "> Warning: No valid commands found in main()."]);
+                if (gameMode === 'multi') {
+                    multiplayer.reportExecutionFinished();
+                }
             } else {
-                setLogs(prev => [...prev, `> Uploading ${commands.length} commands to Rover...`]);
+                setAttempts(prev => prev + 1);
+                setLogs(prev => [...prev, `> Uploading ${commands.length} commands to Rover... (Attempt #${attempts + 1})`]);
                 setCommandQueue(commands);
                 setIsPlaying(true);
 
@@ -118,6 +117,28 @@ export default function PlaygroundPage() {
             }
         } catch (e: any) {
             setLogs(prev => [...prev, `> Syntax Error: ${e.message}`]);
+            if (gameMode === 'multi') {
+                multiplayer.reportExecutionFinished();
+            }
+        }
+    };
+
+    // Multiplayer Execution Trigger
+    useEffect(() => {
+        if (gameMode === 'multi' && multiplayer.gameState.gamePhase === 'executing' && !isPlaying) {
+            console.log("Multiplayer Execution Started!");
+            // Use our own code for local simulation
+            handleRun();
+        }
+    }, [multiplayer.gameState.gamePhase, gameMode]);
+
+    // Position Update Throttling
+    const lastUpdateRef = useRef(0);
+    const handlePositionUpdate = (pos: [number, number, number], rot: number) => {
+        const now = Date.now();
+        if (now - lastUpdateRef.current > 100) { // Limit to 10 updates/sec
+            multiplayer.updatePosition(pos, rot);
+            lastUpdateRef.current = now;
         }
     };
 
@@ -146,6 +167,11 @@ export default function PlaygroundPage() {
         setIsPlaying(false);
         setGameOver(true);
         setLogs(prev => [...prev, "> CRITICAL FAILURE: SYSTEM CRASH DETECTED."]);
+        if (gameMode === 'multi') {
+            multiplayer.playerCrashed();
+            // Also execution finished logic is handled by server knowing we crashed?
+            // Yes, server sets isEliminated=true and checks round completion.
+        }
         sfxCrashRef.current?.play().catch(() => { });
     };
 
@@ -177,28 +203,7 @@ export default function PlaygroundPage() {
     };
 
     const handleSubmitCode = () => {
-        // Parse code and submit to multiplayer
-        const commands: Command[] = [];
-        const lines = code.split('\n');
-
-        lines.forEach((line) => {
-            const trimmed = line.trim();
-            if (trimmed.startsWith("//") || trimmed === "") return;
-            const cleanLine = trimmed.split("//")[0].trim();
-
-            const moveMatch = cleanLine.match(/move_forward\(\s*(\d+)\s*\);?/);
-            const turnLeftMatch = cleanLine.match(/turn_left\(\s*(\d+)\s*\);?/);
-            const turnRightMatch = cleanLine.match(/turn_right\(\s*(\d+)\s*\);?/);
-            const collectMatch = cleanLine.match(/collect\(\s*\);?/);
-            const scanMatch = cleanLine.match(/scan\(\s*\);?/);
-
-            if (moveMatch) commands.push({ type: "MOVE", value: parseInt(moveMatch[1]) });
-            else if (turnLeftMatch) commands.push({ type: "TURN", value: parseInt(turnLeftMatch[1]) });
-            else if (turnRightMatch) commands.push({ type: "TURN", value: -parseInt(turnRightMatch[1]) });
-            else if (collectMatch) commands.push({ type: "COLLECT" });
-            else if (scanMatch) commands.push({ type: "SCAN" });
-        });
-
+        const commands = parseCode(code);
         multiplayer.submitCode(commands);
         setLogs(prev => [...prev, `> Code submitted (${commands.length} commands)`]);
     };
@@ -310,6 +315,7 @@ export default function PlaygroundPage() {
                 </div>
                 <div className="flex items-center gap-4">
                     <span className="text-xs text-white/40 font-mono">ROCKS FOUND: {collectedItems.length}/5</span>
+                    <span className="text-xs text-blue-400 font-mono">ATTEMPT #{attempts}</span>
                     <Button variant="outline" size="sm" onClick={handleReset} className="h-8 border-red-500/30 text-red-400 hover:bg-red-900/20">
                         <RotateCcw className="w-3 h-3 mr-2" /> RESET ROVER
                     </Button>
@@ -322,12 +328,23 @@ export default function PlaygroundPage() {
                     <div className="h-10 bg-[#151515] border-b border-white/10 flex items-center justify-between px-4">
                         <span className="text-xs text-white/50 font-mono">rover_control.c</span>
                         <Button
-                            onClick={handleRun}
-                            disabled={isPlaying || gameOver}
-                            className={`h-7 text-xs font-mono tracking-widest ${isPlaying ? 'bg-gray-700 text-gray-500' : 'bg-green-600 hover:bg-green-500 text-white'}`}
+                            onClick={gameMode === 'multi' ? handleSubmitCode : handleRun}
+                            disabled={
+                                isPlaying ||
+                                gameOver ||
+                                (gameMode === 'multi' && !!multiplayer.gameState.players.find(p => p.id === multiplayer.gameState.currentPlayer?.id)?.hasSubmitted)
+                            }
+                            className={`h-7 text-xs font-mono tracking-widest ${isPlaying || (gameMode === 'multi' && multiplayer.gameState.players.find(p => p.id === multiplayer.gameState.currentPlayer?.id)?.hasSubmitted)
+                                ? 'bg-gray-700 text-gray-500'
+                                : gameMode === 'multi'
+                                    ? 'bg-purple-600 hover:bg-purple-500 text-white'
+                                    : 'bg-green-600 hover:bg-green-500 text-white'
+                                }`}
                         >
                             <Play className="w-3 h-3 mr-2" />
-                            {isPlaying ? "EXECUTING..." : "RUN PROTOCOL"}
+                            {gameMode === 'multi'
+                                ? (multiplayer.gameState.players.find(p => p.id === multiplayer.gameState.currentPlayer?.id)?.hasSubmitted ? "READY - WAITING" : "SUBMIT CODE")
+                                : (isPlaying ? "EXECUTING..." : "RUN PROTOCOL")}
                         </Button>
                     </div>
                     <div className="flex-1 relative">
@@ -369,26 +386,39 @@ export default function PlaygroundPage() {
                     <PlaygroundScene
                         commandQueue={commandQueue}
                         isPlaying={isPlaying}
-                        onComplete={() => setIsPlaying(false)}
+                        onComplete={() => {
+                            setIsPlaying(false);
+                            if (gameMode === 'multi') {
+                                multiplayer.reportExecutionFinished();
+                            }
+                        }}
                         onCollect={(item) => {
                             setCollectedItems(prev => [...prev, item]);
                             setLogs(prev => [...prev, `> ANALYZED: ${item}`]);
+
+                            // Visual Feedback for Ability Unlock
+                            setShowPopup({
+                                title: "ABILITY PARAMETER UNLOCKED",
+                                desc: `Captured ${item}. Optimization algorithms enhanced for next level.`
+                            });
+                            setTimeout(() => setShowPopup(null), 3000);
                         }}
                         onCrash={handleCrash}
                         resetTrigger={resetTrigger}
                         // Multiplayer props
                         isMultiplayer={gameMode === 'multi'}
-                        allPlayers={multiplayer.gameState.allPlayersCommands || multiplayer.gameState.players.map(p => ({
+                        allPlayers={gameMode === 'multi' ? multiplayer.gameState.players.map(p => ({
                             id: p.id,
                             name: p.name,
                             color: p.color,
-                            commands: [],
+                            commands: p.submittedCode || [], // Use submittedCode from player object
                             position: p.position,
                             rotation: p.rotation
-                        }))}
+                        })) : []}
                         currentPlayerId={multiplayer.gameState.currentPlayer?.id}
                         satellitePosition={multiplayer.gameState.satellitePosition}
                         onPlayerReachedSatellite={multiplayer.playerReachedSatellite}
+                        onPositionUpdate={gameMode === 'multi' ? handlePositionUpdate : undefined}
                     />
 
                     {/* Instructions Overlay */}
@@ -438,6 +468,7 @@ export default function PlaygroundPage() {
             {gameMode === 'multi' && multiplayer.gameState.gamePhase === 'coding' && (
                 <div className="absolute top-20 right-4 z-30">
                     <GameTimer
+                        key={multiplayer.gameState.currentRound}
                         timeRemaining={multiplayer.gameState.codingTimer}
                         totalTime={30}
                         onTimeUp={handleSubmitCode}
@@ -496,7 +527,7 @@ export default function PlaygroundPage() {
                                             <span className="text-white">{player.name}</span>
                                         </div>
                                         <span className="text-white/60 text-sm">
-                                            {player.distanceToSatellite.toFixed(1)}m
+                                            {(player.distanceToSatellite || 0).toFixed(1)}m
                                         </span>
                                     </div>
                                 ))}

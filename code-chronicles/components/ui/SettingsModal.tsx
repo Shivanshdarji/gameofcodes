@@ -6,6 +6,8 @@ import { X, Volume2, Monitor, User, Shield } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useAudio } from "@/components/providers/AudioProvider";
 
+import { useGraphics } from "@/components/providers/GraphicsProvider";
+
 interface SettingsModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -14,6 +16,7 @@ interface SettingsModalProps {
 export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     const [activeTab, setActiveTab] = useState("audio");
     const { volume, setVolume } = useAudio();
+    const { quality, setQuality } = useGraphics();
 
     return (
         <AnimatePresence>
@@ -102,8 +105,53 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                     )}
 
                                     {activeTab === "graphics" && (
-                                        <div className="flex items-center justify-center h-full text-white/40 font-mono text-sm">
-                                            GRAPHICS SETTINGS LOCKED BY ADMINISTRATOR
+                                        <div className="space-y-8">
+                                            <div>
+                                                <h3 className="text-lg font-bold text-white mb-6 font-mono border-b border-white/10 pb-2">GRAPHICS SETTINGS</h3>
+
+                                                <div className="space-y-6">
+                                                    <div className="bg-white/5 p-6 rounded-xl border border-white/5 hover:border-white/10 transition-colors">
+                                                        <div className="flex justify-between mb-4">
+                                                            <span className="text-white/80 font-medium">Quality Preset</span>
+                                                            <span className="text-cyan-400 font-mono uppercase">{quality}</span>
+                                                        </div>
+                                                        <div className="grid grid-cols-3 gap-3">
+                                                            {(['low', 'medium', 'high'] as const).map((q) => (
+                                                                <button
+                                                                    key={q}
+                                                                    onClick={() => setQuality(q)}
+                                                                    className={`py-2 px-4 rounded-lg font-mono text-xs transition-all border ${quality === q
+                                                                        ? "bg-cyan-500/20 text-cyan-400 border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]"
+                                                                        : "bg-black/30 text-white/40 border-transparent hover:bg-white/5 hover:text-white/80"
+                                                                        }`}
+                                                                >
+                                                                    {q.toUpperCase()}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                        <div className="mt-4 text-xs text-white/40">
+                                                            {quality === 'low' && "Best performance. Reduced effects, shadows off."}
+                                                            {quality === 'medium' && "Balanced experience. Standard effects and shadows."}
+                                                            {quality === 'high' && "Maximum visual fidelity. High particle counts and full effects."}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="space-y-2">
+                                                        <div className="flex justify-between text-xs text-white/40 font-mono px-1">
+                                                            <span>PARTICLES</span>
+                                                            <span className={quality === 'low' ? 'text-red-400' : 'text-cyan-400'}>{quality === 'low' ? 'LOW' : quality === 'medium' ? 'MED' : 'HIGH'}</span>
+                                                        </div>
+                                                        <div className="flex justify-between text-xs text-white/40 font-mono px-1">
+                                                            <span>SHADOWS</span>
+                                                            <span className={quality === 'low' ? 'text-red-400' : 'text-cyan-400'}>{quality === 'low' ? 'OFF' : 'ON'}</span>
+                                                        </div>
+                                                        <div className="flex justify-between text-xs text-white/40 font-mono px-1">
+                                                            <span>RESOLUTION</span>
+                                                            <span className="text-cyan-400">{quality === 'low' ? '1x' : quality === 'medium' ? '1.5x' : '2x'}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
                                     )}
 

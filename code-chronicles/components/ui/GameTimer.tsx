@@ -24,6 +24,11 @@ export default function GameTimer({ timeRemaining, totalTime, onTimeUp }: GameTi
         if (timeRemaining === 0 && onTimeUp) {
             onTimeUp();
         }
+
+        // Reset warning if time goes back up (new round)
+        if (timeRemaining > 10 && playWarning) {
+            setPlayWarning(false);
+        }
     }, [timeRemaining, onTimeUp, playWarning]);
 
     const percentage = (timeRemaining / totalTime) * 100;
@@ -50,10 +55,10 @@ export default function GameTimer({ timeRemaining, totalTime, onTimeUp }: GameTi
             <div className="w-full h-2 bg-black/50 rounded-full overflow-hidden">
                 <div
                     className={`h-full transition-all duration-1000 ease-linear ${isCritical
-                            ? 'bg-red-500'
-                            : isWarning
-                                ? 'bg-yellow-500'
-                                : 'bg-cyan-500'
+                        ? 'bg-red-500'
+                        : isWarning
+                            ? 'bg-yellow-500'
+                            : 'bg-cyan-500'
                         }`}
                     style={{ width: `${percentage}%` }}
                 />

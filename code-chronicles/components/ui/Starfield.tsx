@@ -1,9 +1,9 @@
-"use client";
-
 import { useEffect, useRef } from "react";
+import { useGraphics } from "@/components/providers/GraphicsProvider";
 
 export default function Starfield() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const { particleCount, resolution } = useGraphics();
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -14,10 +14,19 @@ export default function Starfield() {
 
         let animationFrameId: number;
         let stars: { x: number; y: number; z: number }[] = [];
-        const numStars = 800;
+        // Adjust star count based on setting (base 800 is now dynamic)
+        // particleCount is 500, 1500, 3000. Let's scale it reasonable for 2D canvas
+        // 500 is fine for low. 1500 for medium.
+        const numStars = Math.min(particleCount, 1500); // Cap at 1500 for 2D canvas performance? Or let it fly.
+        // Actually particleCount was designed for 3D mostly, but let's use it here too.
+
         const speed = 0.5;
 
         const resize = () => {
+            // Handle DPI
+            const dpr = window.devicePixelRatio || 1;
+            // We can use resolution setting to cap dpr if we wanted, but for 2D canvas standard resize is usually fine.
+            // Let's stick to standard full size match
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
             initStars();
@@ -70,7 +79,7 @@ export default function Starfield() {
             window.removeEventListener("resize", resize);
             cancelAnimationFrame(animationFrameId);
         };
-    }, []);
+    }, [particleCount]); // Re-run when particleCount changes
 
-    return <canvas ref={canvasRef} className="fixed inset-0 z-0" />;
+    return <canvas ref={canvasRef} className="fixed inset-0 z-0 pointer-events-none" />;
 }

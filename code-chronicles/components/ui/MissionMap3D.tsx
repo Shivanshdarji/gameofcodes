@@ -6,6 +6,7 @@ import { useState, useRef, useMemo, Suspense, useEffect } from "react";
 import * as THREE from "three";
 import { useRouter } from "next/navigation";
 import { useGame } from "@/components/providers/GameProvider";
+import { useGraphics } from "@/components/providers/GraphicsProvider";
 
 // Configuration for the Spiral
 const SPIRAL_RADIUS = 30;
@@ -143,7 +144,13 @@ const OrbitingSatellite = ({ radius, speed, offset }: { radius: number, speed: n
 
 // Generate Debris/Asteroids to fill space
 const DebrisField = () => {
-    const debrisCount = 1500;
+    const { particleCount } = useGraphics();
+    // Use smaller count for debris, scaled by quality
+    // Low: 500 -> ~300
+    // Med: 1500 -> ~1000
+    // High: 3000 -> ~2000
+    const debrisCount = Math.floor(particleCount * 0.7);
+
     const debris = useMemo(() => {
         const temp = [];
         for (let i = 0; i < debrisCount; i++) {
@@ -162,7 +169,7 @@ const DebrisField = () => {
             temp.push({ position: [x, y, z], scale });
         }
         return temp;
-    }, []);
+    }, [debrisCount]);
 
     return (
         <Instances range={debrisCount}>
@@ -178,6 +185,7 @@ const DebrisField = () => {
 // Wrapper to rotate the entire environment/galaxy background
 const RotatingGalaxy = () => {
     const groupRef = useRef<THREE.Group>(null);
+    const { quality } = useGraphics();
 
     useFrame((state, delta) => {
         if (groupRef.current) {
@@ -190,36 +198,45 @@ const RotatingGalaxy = () => {
     return (
         <group ref={groupRef}>
             {/* Deep Space Background Stars - Base layer */}
-            <Stars radius={2000} depth={500} count={20000} factor={4} saturation={1} fade speed={1} />
+            <Stars radius={2000} depth={500} count={quality === 'low' ? 5000 : 20000} factor={4} saturation={1} fade speed={1} />
 
             {/* Diverse Sparkle Layers for "Shining" effect */}
 
             {/* 1. Small Distant White Stars (High density) */}
-            <Sparkles count={5000} scale={3000} size={2} speed={0.2} opacity={0.8} color="#ffffff" noise={50} />
+            <Sparkles count={quality === 'low' ? 1000 : 5000} scale={3000} size={2} speed={0.2} opacity={0.8} color="#ffffff" noise={50} />
 
             {/* 2. Medium Cyan Glow (Nebula feel) */}
-            <Sparkles count={2000} scale={2500} size={10} speed={0.4} opacity={0.5} color="#00f0ff" noise={100} />
+            {quality !== 'low' && (
+                <Sparkles count={2000} scale={2500} size={10} speed={0.4} opacity={0.5} color="#00f0ff" noise={100} />
+            )}
 
             {/* 3. Large Purple/Pink Ambient Stars */}
-            <Sparkles count={1000} scale={2500} size={25} speed={0.3} opacity={0.4} color="#ff00aa" noise={200} />
+            {quality !== 'low' && (
+                <Sparkles count={1000} scale={2500} size={25} speed={0.3} opacity={0.4} color="#ff00aa" noise={200} />
+            )}
 
             {/* 4. Bright Gold/Orange Emphasis Stars */}
-            <Sparkles count={500} scale={2000} size={15} speed={0.1} opacity={0.9} color="#ffd700" />
+            <Sparkles count={quality === 'low' ? 100 : 500} scale={2000} size={15} speed={0.1} opacity={0.9} color="#ffd700" />
 
             {/* 5. Extra Large "Near" Stars (Parallax feel) */}
-            <Sparkles count={100} scale={1500} size={50} speed={0.5} opacity={1} color="#ffffff" />
+            <Sparkles count={quality === 'low' ? 20 : 100} scale={1500} size={50} speed={0.5} opacity={1} color="#ffffff" />
 
             {/* 6. Rare Red/Blue Giants */}
-            <Sparkles count={50} scale={2000} size={80} speed={0.2} opacity={0.6} color="#ff4400" />
-            <Sparkles count={50} scale={2000} size={80} speed={0.2} opacity={0.6} color="#4400ff" />
+            <Sparkles count={quality === 'low' ? 10 : 50} scale={2000} size={80} speed={0.2} opacity={0.6} color="#ff4400" />
+            <Sparkles count={quality === 'low' ? 10 : 50} scale={2000} size={80} speed={0.2} opacity={0.6} color="#4400ff" />
 
             {/* Dynamic Elements - Big Rocks */}
             <OrbitingRock />
             <OrbitingRock />
             <OrbitingRock />
-            <OrbitingRock />
-            <OrbitingRock />
-            <OrbitingRock />
+            {quality === 'high' && (
+                <>
+                    <OrbitingRock />
+                    <OrbitingRock />
+                    <OrbitingRock />
+                </>
+            )}
+
             {/* The Mighty Space Sheep */}
             <SpaceSheep />
 
@@ -497,9 +514,11 @@ export default function MissionMap3D() {
         router.push(`/level/${id}`);
     };
 
+    const { resolution } = useGraphics();
+
     return (
         <div className="w-full h-screen bg-black relative">
-            <Canvas camera={{ position: [0, 0, 40], fov: 50, far: 4000 }}>
+            <Canvas dpr={[1, resolution]} camera={{ position: [0, 0, 40], fov: 50, far: 4000 }}>
                 <Suspense fallback={null}>
                     <ambientLight intensity={0.2} />
                     <pointLight position={[10, 10, 10]} intensity={1.5} />
