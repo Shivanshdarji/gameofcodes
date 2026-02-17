@@ -77,18 +77,21 @@ function randomSatellitePosition(level: number = 1): [number, number, number] {
 }
 
 app.prepare().then(() => {
+  let io: Server;
+
   const httpServer = createServer((req, res) => {
     // Delegate to Next.js for all non-socket requests
-    // Socket.io handles /socket.io automatically via its own listener attached to httpServer
-    // asking Next.js to handle it causes a 404 because Next doesn't know about that route.
-    if (req.url?.startsWith('/socket.io')) {
+    // Explicitly pass socket.io requests to the engine to ensure they are handled
+    if (req.url?.startsWith('/socket.io') && io) {
+      // @ts-ignore - handleRequest is internal but public enough for this use case
+      io.engine.handleRequest(req, res);
       return;
     }
     const parsedUrl = parse(req.url!, true);
     handle(req, res, parsedUrl);
   });
 
-  const io = new Server(httpServer, {
+  io = new Server(httpServer, {
     // In production, Next.js serves the client, so same origin is fine.
     // We allow CORS for dev or if env var is set.
     cors: {
