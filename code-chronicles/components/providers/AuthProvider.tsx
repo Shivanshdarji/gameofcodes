@@ -43,7 +43,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setSession(session);
             setUser(session?.user ?? null);
             setLoading(false);
-            if (_event === 'SIGNED_OUT') router.push('/');
+
+            // Only redirect if not on a public auth page
+            const isAuthPage = ['/login', '/signup', '/forgot-password', '/reset-password'].some(path => window.location.pathname.startsWith(path));
+            if (_event === 'SIGNED_OUT' && !isAuthPage) {
+                router.push('/');
+            }
         });
 
         setData();
