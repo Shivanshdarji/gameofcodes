@@ -86,8 +86,9 @@ app.prepare().then(() => {
     // In production, Next.js serves the client, so same origin is fine.
     // We allow CORS for dev or if env var is set.
     cors: {
-      origin: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
-      methods: ["GET", "POST"]
+      origin: process.env.NEXT_PUBLIC_APP_URL || "*",
+      methods: ["GET", "POST"],
+      credentials: true
     }
   });
 
