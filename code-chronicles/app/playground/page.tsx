@@ -186,19 +186,23 @@ export default function PlaygroundPage() {
 
     const handleCreateRoom = async () => {
         if (!playerName.trim()) return;
+        setLogs(prev => [...prev, `> Initializing secure connection...`]);
         const result = await multiplayer.createRoom(playerName);
         if (result.success) {
             setLogs(prev => [...prev, `> Room created: ${result.roomId}`]);
+        } else {
+            setLogs(prev => [...prev, `> Error: ${result.error || 'Connection timed out'}`]);
         }
     };
 
     const handleJoinRoom = async () => {
         if (!playerName.trim() || !roomIdInput.trim()) return;
+        setLogs(prev => [...prev, `> Searching for signal: ${roomIdInput}...`]);
         const result = await multiplayer.joinRoom(roomIdInput.toUpperCase(), playerName);
         if (result.success) {
             setLogs(prev => [...prev, `> Joined room: ${roomIdInput}`]);
         } else {
-            setLogs(prev => [...prev, `> Error: ${result.error}`]);
+            setLogs(prev => [...prev, `> Error: ${result.error || 'Connection failed'}`]);
         }
     };
 

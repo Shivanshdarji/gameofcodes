@@ -220,8 +220,8 @@ export function useMultiplayer() {
 
     const createRoom = useCallback((playerName: string) => {
         return new Promise<{ success: boolean; roomId?: string; error?: string }>((resolve) => {
-            if (!socketRef.current) {
-                resolve({ success: false, error: 'Not connected' });
+            if (!socketRef.current?.connected) {
+                resolve({ success: false, error: 'Not connected to server' });
                 return;
             }
 
@@ -242,8 +242,8 @@ export function useMultiplayer() {
 
     const joinRoom = useCallback((roomId: string, playerName: string) => {
         return new Promise<{ success: boolean; error?: string }>((resolve) => {
-            if (!socketRef.current) {
-                resolve({ success: false, error: 'Not connected' });
+            if (!socketRef.current?.connected) {
+                resolve({ success: false, error: 'Not connected to server' });
                 return;
             }
 
