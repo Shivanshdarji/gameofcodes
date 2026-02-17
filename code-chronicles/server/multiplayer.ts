@@ -86,7 +86,14 @@ app.prepare().then(() => {
     // In production, Next.js serves the client, so same origin is fine.
     // We allow CORS for dev or if env var is set.
     cors: {
-      origin: process.env.NEXT_PUBLIC_APP_URL || "*",
+      origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+
+        // Allow any origin (effectively reflecting it) for now to fix connection issues
+        // In a strict environment, we would check against a whitelist here.
+        callback(null, true);
+      },
       methods: ["GET", "POST"],
       credentials: true
     }
