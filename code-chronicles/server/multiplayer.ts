@@ -78,6 +78,12 @@ function randomSatellitePosition(level: number = 1): [number, number, number] {
 
 app.prepare().then(() => {
   const httpServer = createServer((req, res) => {
+    // Delegate to Next.js for all non-socket requests
+    // Socket.io handles /socket.io automatically via its own listener attached to httpServer
+    // asking Next.js to handle it causes a 404 because Next doesn't know about that route.
+    if (req.url?.startsWith('/socket.io')) {
+      return;
+    }
     const parsedUrl = parse(req.url!, true);
     handle(req, res, parsedUrl);
   });
