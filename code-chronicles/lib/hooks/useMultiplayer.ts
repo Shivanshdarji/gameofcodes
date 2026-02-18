@@ -15,6 +15,8 @@ interface Player {
     submittedCode: Command[] | null;
     distanceToSatellite: number;
     hasSubmitted?: boolean;
+    xp?: number;
+    level?: number;
 }
 
 interface GameState {
@@ -27,7 +29,7 @@ interface GameState {
     satellitePosition: [number, number, number];
     currentTurnPlayer: string | null;
     isHost: boolean;
-    winner: { id: string; name: string; color: string } | null;
+    winner: { id: string; name: string; color: string; xp?: number; level?: number } | null;
 }
 
 export function useMultiplayer() {
@@ -53,7 +55,7 @@ export function useMultiplayer() {
         // or strictly localhost for dev if needed.
         // For production on same domain, undefined (no arg) is often enough for socket.io-client to guess.
         // But to be safe and explicit:
-        const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3001' : undefined);
+        const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3000' : undefined);
 
         const newSocket = io(socketUrl || undefined, {
             path: '/socket.io',
@@ -218,14 +220,14 @@ export function useMultiplayer() {
         };
     }, []);
 
-    const createRoom = useCallback((playerName: string) => {
+    const createRoom = useCallback((playerName: string, userId?: string) => {
         return new Promise<{ success: boolean; roomId?: string; error?: string }>((resolve) => {
             if (!socketRef.current?.connected) {
                 resolve({ success: false, error: 'Not connected to server' });
                 return;
             }
 
-            socketRef.current.emit('create-room', playerName, (response: { success: boolean; roomId?: string; player?: Player; error?: string }) => {
+            socketRef.current.emit('create-room', { playerName, userId }, (response: { success: boolean; roomId?: string; player?: Player; error?: string }) => {
                 if (response.success) {
                     setGameState(prev => ({
                         ...prev,
@@ -240,14 +242,14 @@ export function useMultiplayer() {
         });
     }, []);
 
-    const joinRoom = useCallback((roomId: string, playerName: string) => {
+    const joinRoom = useCallback((roomId: string, playerName: string, userId?: string) => {
         return new Promise<{ success: boolean; error?: string }>((resolve) => {
             if (!socketRef.current?.connected) {
                 resolve({ success: false, error: 'Not connected to server' });
                 return;
             }
 
-            socketRef.current.emit('join-room', roomId, playerName, (response: { success: boolean; roomId?: string; player?: Player; error?: string }) => {
+            socketRef.current.emit('join-room', { roomId, playerName, userId }, (response: { success: boolean; roomId?: string; player?: Player; error?: string }) => {
                 if (response.success) {
                     setGameState(prev => ({
                         ...prev,
@@ -302,6 +304,7 @@ export function useMultiplayer() {
     }, [gameState.roomId]);
 
     return {
+        socket: socketRef.current,
         connected,
         gameState,
         createRoom,

@@ -4,13 +4,17 @@ import { useState, useRef, useEffect } from "react";
 import Editor from "@monaco-editor/react";
 import PlaygroundScene, { Command } from "@/components/ui/PlaygroundScene";
 import { Button } from "@/components/ui/Button";
-import { Play, RefreshCw, Terminal, ArrowLeft, Lightbulb, RotateCcw, Users, User } from "lucide-react";
+import { Play, RefreshCw, Terminal, ArrowLeft, Lightbulb, RotateCcw, Users, User, Globe } from "lucide-react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMultiplayer } from "@/lib/hooks/useMultiplayer";
+import { useAuth } from "@/components/providers/AuthProvider";
+import { usePing } from "@/lib/hooks/usePing";
+
 import MultiplayerLobby from "@/components/ui/MultiplayerLobby";
 import GameTimer from "@/components/ui/GameTimer";
 import PlayerLeaderboard from "@/components/ui/PlayerLeaderboard";
+import NetworkStatus from "@/components/ui/NetworkStatus";
 
 const INITIAL_CODE = `// COMMANDER'S LOG: MOON BASE ALPHA
 // MISSION: Explore the surface and collect Data Rocks.
@@ -37,16 +41,37 @@ int main() {
     return 0;
 }
 `;
-
 export default function PlaygroundPage() {
     // Mode selection
     const [gameMode, setGameMode] = useState<'single' | 'multi' | null>(null);
     const [playerName, setPlayerName] = useState("");
     const [roomIdInput, setRoomIdInput] = useState("");
 
+    // Auth hook
+    const { user } = useAuth();
+    const { ping, connected, onlineCount } = usePing();
+
+    const getPingColor = (ms: number | null) => {
+        if (!connected || ms === null) return "text-red-400";
+        if (ms < 60) return "text-green-400";
+        if (ms < 120) return "text-cyan-400";
+        if (ms < 200) return "text-yellow-400";
+        return "text-red-400";
+    };
+
+    // Use user's name if logged in
+    useEffect(() => {
+        if (user?.user_metadata?.username) {
+            setPlayerName(user.user_metadata.username);
+        } else if (user?.email) {
+            setPlayerName(user.email.split('@')[0]);
+        }
+    }, [user]);
+
     // Multiplayer hook
     const multiplayer = useMultiplayer();
 
+    // ... existing state ...
     const [code, setCode] = useState(INITIAL_CODE);
     const [logs, setLogs] = useState<string[]>(["> System Online.", "> Rover connected..."]);
     const [isPlaying, setIsPlaying] = useState(false);
@@ -56,6 +81,7 @@ export default function PlaygroundPage() {
     const [showPopup, setShowPopup] = useState<{ title: string, desc: string } | null>(null);
     const [attempts, setAttempts] = useState(0);
 
+    // ... existing effects ...
     // Reset attempts on level change
     useEffect(() => {
         setAttempts(0);
@@ -187,7 +213,7 @@ export default function PlaygroundPage() {
     const handleCreateRoom = async () => {
         if (!playerName.trim()) return;
         setLogs(prev => [...prev, `> Initializing secure connection...`]);
-        const result = await multiplayer.createRoom(playerName);
+        const result = await multiplayer.createRoom(playerName, user?.id);
         if (result.success) {
             setLogs(prev => [...prev, `> Room created: ${result.roomId}`]);
         } else {
@@ -198,7 +224,7 @@ export default function PlaygroundPage() {
     const handleJoinRoom = async () => {
         if (!playerName.trim() || !roomIdInput.trim()) return;
         setLogs(prev => [...prev, `> Searching for signal: ${roomIdInput}...`]);
-        const result = await multiplayer.joinRoom(roomIdInput.toUpperCase(), playerName);
+        const result = await multiplayer.joinRoom(roomIdInput.toUpperCase(), playerName, user?.id);
         if (result.success) {
             setLogs(prev => [...prev, `> Joined room: ${roomIdInput}`]);
         } else {
@@ -216,6 +242,14 @@ export default function PlaygroundPage() {
     if (!gameMode) {
         return (
             <div className="w-full h-screen bg-[#050505] text-white flex items-center justify-center">
+                {/* Network HUD - always visible */}
+                <div className="fixed top-4 right-4 z-50">
+                    <NetworkStatus
+                        playerCount={1}
+                        socket={multiplayer.socket}
+                        connected={multiplayer.connected}
+                    />
+                </div>
                 <div className="max-w-2xl w-full mx-4">
                     <h1 className="text-4xl font-bold text-center mb-2 text-cyan-400 font-mono">LUNAR PLAYGROUND</h1>
                     <p className="text-center text-white/60 mb-8">Choose your game mode</p>
@@ -248,6 +282,14 @@ export default function PlaygroundPage() {
     if (gameMode === 'multi' && !multiplayer.gameState.roomId) {
         return (
             <div className="w-full h-screen bg-[#050505] text-white flex items-center justify-center">
+                {/* Network HUD - always visible */}
+                <div className="fixed top-4 right-4 z-50">
+                    <NetworkStatus
+                        playerCount={multiplayer.gameState.players.length || 1}
+                        socket={multiplayer.socket}
+                        connected={multiplayer.connected}
+                    />
+                </div>
                 <div className="max-w-md w-full mx-4">
                     <button
                         onClick={() => setGameMode(null)}
@@ -309,6 +351,30 @@ export default function PlaygroundPage() {
     return (
         <div className="w-full h-screen bg-[#050505] text-white flex flex-col font-sans overflow-hidden">
 
+            {/* Top-Left Network HUD — matches home page style, always visible */}
+            <div className="absolute top-16 left-4 z-30 pointer-events-none hidden md:block">
+                <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2 text-cyan-500/80 font-mono text-xs tracking-widest">
+                        <Globe className={`w-3 h-3 ${connected ? 'animate-pulse' : ''}`} />
+                        <span>
+                            {connected ? `${Math.max(onlineCount, 1)} CONNECTED` : 'OFFLINE'}
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-3 font-mono text-[10px]">
+                        <span className={getPingColor(ping)}>PING: {ping !== null ? `${ping}ms` : '…'}</span>
+                        {gameMode === 'multi' && (
+                            <>
+                                <span className="text-white/30">|</span>
+                                <span className="text-cyan-400 flex items-center gap-1">
+                                    <Users className="w-2.5 h-2.5" />
+                                    {multiplayer.gameState.players.length} IN ROOM
+                                </span>
+                            </>
+                        )}
+                    </div>
+                </div>
+            </div>
+
             {/* Header */}
             <div className="h-14 border-b border-white/10 bg-[#0a0a0a] flex items-center justify-between px-6 shrink-0 z-20">
                 <div className="flex items-center gap-4">
@@ -320,6 +386,13 @@ export default function PlaygroundPage() {
                 <div className="flex items-center gap-4">
                     <span className="text-xs text-white/40 font-mono">ROCKS FOUND: {collectedItems.length}/5</span>
                     <span className="text-xs text-blue-400 font-mono">ATTEMPT #{attempts}</span>
+                    {/* Network Status HUD */}
+                    <NetworkStatus
+                        playerCount={gameMode === 'multi' ? multiplayer.gameState.players.length : 1}
+                        socket={multiplayer.socket}
+                        connected={multiplayer.connected}
+                        gamePhase={multiplayer.gameState.gamePhase}
+                    />
                     <Button variant="outline" size="sm" onClick={handleReset} className="h-8 border-red-500/30 text-red-400 hover:bg-red-900/20">
                         <RotateCcw className="w-3 h-3 mr-2" /> RESET ROVER
                     </Button>
@@ -498,68 +571,184 @@ export default function PlaygroundPage() {
                 </div>
             )}
 
-            {/* Game Over Screen (Multiplayer) */}
-            {gameMode === 'multi' && multiplayer.gameState.winner && (
-                <div className="absolute inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center">
-                    <div className="bg-[#0a0a0a] border-2 border-yellow-500 rounded-xl p-8 max-w-lg w-full mx-4 text-center">
-                        <h2 className="text-4xl font-bold text-yellow-500 mb-2">🏆 LEVEL {multiplayer.gameState.currentRound} COMPLETE! 🏆</h2>
-                        <p className="text-white/60 mb-6">Winner</p>
-                        <div
-                            className="w-20 h-20 rounded-full mx-auto mb-3"
-                            style={{ backgroundColor: multiplayer.gameState.winner.color }}
-                        />
-                        <p className="text-3xl font-bold text-white mb-2">{multiplayer.gameState.winner.name}</p>
-                        <p className="text-white/60 mb-6">reached the satellite first!</p>
+            {/* Game Over Screen (Multiplayer) - GAMIFIED REDESIGN */}
+            <AnimatePresence mode="wait">
+                {gameMode === 'multi' && multiplayer.gameState.winner && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="absolute inset-0 bg-black/95 backdrop-blur-xl z-50 flex items-center justify-center p-4"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            transition={{ type: "spring", duration: 0.8 }}
+                            className="relative w-full max-w-4xl h-[600px] flex bg-[#050510] border border-cyan-500/20 rounded-3xl overflow-hidden shadow-[0_0_100px_rgba(6,182,212,0.15)]"
+                        >
+                            {/* Background Grid & Effects */}
+                            <div className="absolute inset-0 bg-[linear-gradient(rgba(0,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.03)_1px,transparent_1px)] bg-[size:40px_40px] opacity-20" />
+                            <div className="absolute inset-0 bg-gradient-to-br from-cyan-900/10 via-transparent to-purple-900/10" />
 
-                        {/* Scoreboard */}
-                        <div className="bg-black/50 rounded-lg p-4 mb-6 max-h-48 overflow-y-auto">
-                            <h3 className="text-lg font-bold text-cyan-400 mb-3">SCOREBOARD</h3>
-                            {multiplayer.gameState.players
-                                .filter(p => !p.isEliminated)
-                                .sort((a, b) => a.distanceToSatellite - b.distanceToSatellite)
-                                .map((player, index) => (
-                                    <div
-                                        key={player.id}
-                                        className="flex items-center justify-between py-2 border-b border-white/10 last:border-0"
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <span className="text-white/60 w-6">{index + 1}.</span>
-                                            <div
-                                                className="w-4 h-4 rounded-full"
-                                                style={{ backgroundColor: player.color }}
-                                            />
-                                            <span className="text-white">{player.name}</span>
-                                        </div>
-                                        <span className="text-white/60 text-sm">
-                                            {(player.distanceToSatellite || 0).toFixed(1)}m
-                                        </span>
-                                    </div>
-                                ))}
-                        </div>
+                            {/* LEFT SIDE: HERO & RANK */}
+                            <div className="w-1/3 border-r border-cyan-500/10 bg-black/40 relative flex flex-col items-center justify-center p-8 overflow-hidden backdrop-blur-sm">
+                                <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent" />
 
-                        <div className="flex gap-3">
-                            {multiplayer.gameState.isHost && (
-                                <Button
-                                    onClick={() => multiplayer.startNextLevel()}
-                                    className="flex-1 bg-green-600 hover:bg-green-500"
+                                {/* Rank Badge */}
+                                <motion.div
+                                    initial={{ scale: 0, rotate: -180 }}
+                                    animate={{ scale: 1, rotate: 0 }}
+                                    transition={{ delay: 0.2, type: "spring", bounce: 0.5 }}
+                                    className="relative mb-6 group"
                                 >
-                                    Next Level →
-                                </Button>
-                            )}
-                            <Button
-                                onClick={() => {
-                                    setGameMode(null);
-                                    window.location.reload();
-                                }}
-                                className={`${multiplayer.gameState.isHost ? 'flex-1' : 'w-full'} bg-red-600 hover:bg-red-500`}
-                            >
-                                Exit to Menu
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            )}
+                                    <div className="absolute inset-0 bg-yellow-500/20 blur-2xl rounded-full animate-pulse" />
+                                    <div className="w-40 h-40 relative flex items-center justify-center">
+                                        <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-[0_0_20px_rgba(234,179,8,0.5)]">
+                                            <path d="M50 0 L93.3 25 V75 L50 100 L6.7 75 V25 Z" fill="url(#rankGradient)" stroke="rgba(255,255,255,0.2)" strokeWidth="1" />
+                                            <defs>
+                                                <linearGradient id="rankGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                                    <stop offset="0%" stopColor="#facc15" />
+                                                    <stop offset="100%" stopColor="#d97706" />
+                                                </linearGradient>
+                                            </defs>
+                                        </svg>
+                                        <div className="absolute inset-0 flex items-center justify-center">
+                                            <span className="text-7xl font-black italic font-orbitron text-black drop-shadow-md">S</span>
+                                        </div>
+                                    </div>
+                                    <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-yellow-500 text-black font-bold font-mono text-[10px] py-1 px-3 rounded-sm uppercase tracking-wider whitespace-nowrap shadow-lg">
+                                        {multiplayer.gameState.winner.level ? `Level ${multiplayer.gameState.winner.level}` : 'Mission Perfect'}
+                                    </div>
+                                </motion.div>
+
+                                <h2 className="text-2xl font-bold text-white font-orbitron mb-1 text-center truncate w-full px-2">{multiplayer.gameState.winner.name}</h2>
+                                <p className="text-cyan-400 font-mono text-[10px] tracking-[0.2em] mb-8 uppercase">
+                                    {(multiplayer.gameState.winner.level || 1) < 5 ? "Cadet" : (multiplayer.gameState.winner.level || 1) < 10 ? "Officer" : "Commander"}
+                                </p>
+
+                                <div className="w-full space-y-4">
+                                    <div className="bg-white/5 rounded-lg p-3 border border-white/5">
+                                        <div className="flex justify-between text-xs text-white/60 mb-1 font-mono">
+                                            <span>XP PROGRESS</span>
+                                            <span className="text-cyan-400 font-bold">{multiplayer.gameState.winner.xp || 0} XP</span>
+                                        </div>
+                                        <div className="h-1.5 bg-black/50 rounded-full overflow-hidden">
+                                            <motion.div
+                                                initial={{ width: 0 }}
+                                                animate={{ width: `${((multiplayer.gameState.winner.xp || 0) % 2000) / 20}%` }}
+                                                transition={{ delay: 0.5, duration: 1 }}
+                                                className="h-full bg-cyan-500 shadow-[0_0_10px_cyan]"
+                                            />
+                                        </div>
+                                        <div className="text-[10px] text-right text-white/20 mt-1 font-mono">
+                                            NEXT LEVEL: {((multiplayer.gameState.winner.level || 1) * 2000)} XP
+                                        </div>
+                                    </div>
+                                    <div className="bg-white/5 rounded-lg p-3 border border-white/5">
+                                        <div className="flex justify-between text-xs text-white/60 mb-1 font-mono">
+                                            <span>MISSION REWARD</span>
+                                            <span className="text-yellow-400 font-bold">+1000 XP</span>
+                                        </div>
+                                        {/* Credits can be linked to XP or separate. For now, simulate credits based on XP gain/5 or something? or just static reward */}
+                                        <div className="text-[10px] text-right text-yellow-500/50 mt-1 font-mono">
+                                            CREDITS: +500
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* RIGHT SIDE: STATS & ACTIONS */}
+                            <div className="flex-1 p-10 flex flex-col relative z-10">
+                                <div className="flex justify-between items-start mb-2">
+                                    <div>
+                                        <h1 className="text-5xl font-black font-orbitron text-transparent bg-clip-text bg-gradient-to-r from-white to-white/50 tracking-tighter">
+                                            VICTORY
+                                        </h1>
+                                        <p className="text-white/40 text-sm font-mono mt-1">
+                                            SECTOR {multiplayer.gameState.currentRound} SECURED • DATA SYNC COMPLETE
+                                        </p>
+                                    </div>
+                                    <RefreshCw className="w-6 h-6 text-white/20 animate-spin-slow" />
+                                </div>
+
+                                {/* Leaderboard */}
+                                <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 mb-8 mt-8">
+                                    <h3 className="text-[10px] font-bold text-cyan-500/50 mb-4 tracking-[0.2em] font-mono border-b border-white/5 pb-2 uppercase">
+                                        Squadron Performance Logistics
+                                    </h3>
+                                    <div className="space-y-2">
+                                        {multiplayer.gameState.players
+                                            .filter(p => !p.isEliminated)
+                                            .sort((a, b) => a.distanceToSatellite - b.distanceToSatellite)
+                                            .map((player, index) => (
+                                                <motion.div
+                                                    initial={{ x: 20, opacity: 0 }}
+                                                    animate={{ x: 0, opacity: 1 }}
+                                                    transition={{ delay: 0.3 + (index * 0.1) }}
+                                                    key={player.id}
+                                                    className={`flex items-center justify-between p-3 rounded-lg border transition-all hover:bg-white/5 ${index === 0
+                                                        ? 'bg-gradient-to-r from-yellow-500/10 to-transparent border-yellow-500/20 shadow-[inset_0_0_20px_rgba(234,179,8,0.05)]'
+                                                        : 'bg-transparent border-white/5'}`}
+                                                >
+                                                    <div className="flex items-center gap-4">
+                                                        <span className={`font-mono text-xl font-bold w-6 text-center ${index === 0 ? 'text-yellow-400' : 'text-white/20'}`}>
+                                                            {index + 1}
+                                                        </span>
+                                                        <div className="flex flex-col">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className={`font-bold text-sm ${index === 0 ? 'text-white' : 'text-white/70'}`}>
+                                                                    {player.name}
+                                                                </span>
+                                                                {index === 0 && <span className="text-[10px] bg-yellow-500/20 text-yellow-500 px-1.5 rounded uppercase font-bold">MVP</span>}
+                                                            </div>
+                                                            <span className="text-[10px] text-white/30 font-mono tracking-wide">
+                                                                ROVER MK.IV // {index === 0 ? 'OPERATIONAL' : 'STANDBY'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className={`font-mono font-bold text-sm ${index === 0 ? 'text-yellow-400' : 'text-white/40'}`}>
+                                                            {(player.distanceToSatellite || 0).toFixed(1)}m
+                                                        </div>
+                                                    </div>
+                                                </motion.div>
+                                            ))}
+                                    </div>
+                                </div>
+
+                                {/* Actions */}
+                                <div className="flex items-center gap-4 mt-auto pt-6 border-t border-white/5">
+                                    {multiplayer.gameState.isHost && multiplayer.gameState.players.length >= 2 ? (
+                                        <Button
+                                            onClick={() => multiplayer.startNextLevel()}
+                                            className="h-14 px-8 bg-white text-black hover:bg-cyan-400 hover:text-black font-bold font-orbitron text-sm tracking-wider rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98] flex-1 shadow-[0_0_40px_rgba(255,255,255,0.15)] overflow-hidden relative group"
+                                        >
+                                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent -translate-x-full group-hover:animate-shimmer" />
+                                            INITIALIZE NEXT SECTOR
+                                        </Button>
+                                    ) : (
+                                        <div className="flex-1 flex items-center justify-center text-white/30 font-mono text-xs gap-2 bg-white/5 h-14 rounded-xl border border-white/5 border-dashed">
+                                            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                                            WAITING FOR REINFORCEMENTS
+                                        </div>
+                                    )}
+
+                                    <Button
+                                        onClick={() => {
+                                            setGameMode(null);
+                                            window.location.reload();
+                                        }}
+                                        className="h-14 w-14 bg-[#1a1a1e] border border-white/10 rounded-xl hover:bg-red-500/20 hover:border-red-500/50 hover:text-red-400 transition-all flex items-center justify-center group"
+                                        title="Exit Mission"
+                                    >
+                                        <RotateCcw className="w-5 h-5 group-hover:-rotate-90 transition-transform" />
+                                    </Button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }
-

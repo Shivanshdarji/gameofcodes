@@ -23,6 +23,9 @@ export interface LevelStats {
 export interface UserProfile {
     id: string;
     username: string;
+    email: string;
+    xp: number; // Experience Points
+    level: number; // Current Level
     data: {
         skills: {
             syntax: number; // 0-100
@@ -75,49 +78,73 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             if (user) {
                 // Load from Supabase
                 console.log("Loading from Supabase...");
-                const { data: stats, error } = await supabase
+                const { data: stats } = await supabase
                     .from('game_stats')
                     .select('*')
                     .eq('user_id', user.id)
-                    .single();
+                    .maybeSingle(); // won't 406 if no row exists
 
-                // Fetch Profile (Username) separately since it's in a different table
+                // Fetch Profile (Username + Email)
                 const { data: profile } = await supabase
                     .from('profiles')
-                    .select('username')
+                    .select('username, email')
                     .eq('id', user.id)
-                    .single();
+                    .maybeSingle();
 
-                if (stats) {
-                    setCredits(stats.credits);
-                    setHighestCompletedLevel(stats.highest_level);
-                    // Load skills/stats if they exist in DB structure
-                    setGameUser({
+                // Upsert email into profiles so existing users get it saved automatically
+                const userEmail = user.email || '';
+                if (userEmail && (!profile?.email || profile.email !== userEmail)) {
+                    await supabase.from('profiles').upsert({
                         id: user.id,
-                        username: profile?.username || user.user_metadata.username || user.email?.split('@')[0] || "Cadet",
-                        data: {
-                            skills: {
-                                syntax: stats.syntax_skill || 0,
-                                logic: stats.logic_skill || 0,
-                                speed: stats.efficiency_skill || 0
-                            },
-                            stats: {
-                                totalLinesOfCode: 0, // Need to add to DB if tracking
-                                missionsCompleted: stats.highest_level, // Approximation
-                                bugsFixed: 0
-                            },
-                            joinedAt: user.created_at || new Date().toISOString()
-                        }
-                    });
-
-                    // We might need to store sectors unlocked status in DB too. 
-                    // For now, let's assume sectors are derived from levels or just local/default.
-                    // Ideally add 'unlocked_sectors' array to game_stats table.
-                } else if (!error && !stats) {
-                    // New user record creation is handled by trigger, but if it failed or hasn't run yet:
-                    // We can try to insert or just wait.
-                    console.log("No stats found, using defaults");
+                        email: userEmail,
+                        username: profile?.username || user.user_metadata?.username || userEmail.split('@')[0]
+                    }, { onConflict: 'id' });
                 }
+
+                // Use existing stats or auto-create a default row for new users
+                const effectiveStats = stats ?? await (async () => {
+                    const defaultStats = {
+                        user_id: user.id,
+                        credits: 0,
+                        highest_level: 0,
+                        xp: 0,
+                        level: 1,
+                        syntax_skill: 0,
+                        logic_skill: 0,
+                        efficiency_skill: 0,
+                        updated_at: new Date().toISOString(),
+                    };
+                    const { data: created } = await supabase
+                        .from('game_stats')
+                        .insert(defaultStats)
+                        .select()
+                        .single();
+                    console.log("Created default game_stats for new user");
+                    return created ?? defaultStats;
+                })();
+
+                setCredits(effectiveStats.credits ?? 0);
+                setHighestCompletedLevel(effectiveStats.highest_level ?? 0);
+                setGameUser({
+                    id: user.id,
+                    username: profile?.username || user.user_metadata?.username || user.email?.split('@')[0] || "Cadet",
+                    email: user.email || profile?.email || '',
+                    xp: effectiveStats.xp || 0,
+                    level: effectiveStats.level || 1,
+                    data: {
+                        skills: {
+                            syntax: effectiveStats.syntax_skill || 0,
+                            logic: effectiveStats.logic_skill || 0,
+                            speed: effectiveStats.efficiency_skill || 0
+                        },
+                        stats: {
+                            totalLinesOfCode: 0,
+                            missionsCompleted: effectiveStats.highest_level || 0,
+                            bugsFixed: 0
+                        },
+                        joinedAt: user.created_at || new Date().toISOString()
+                    }
+                });
             } else {
                 // Load from LocalStorage (Guest)
                 try {
@@ -157,10 +184,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
                 updated_at: new Date(),
             };
 
-            if (newStats?.data?.skills) {
-                updates.syntax_skill = newStats.data.skills.syntax;
-                updates.logic_skill = newStats.data.skills.logic;
-                updates.efficiency_skill = newStats.data.skills.speed;
+            if (newStats) {
+                if (newStats.xp !== undefined) updates.xp = newStats.xp;
+                if (newStats.level !== undefined) updates.level = newStats.level;
+                if (newStats.data?.skills) {
+                    updates.syntax_skill = newStats.data.skills.syntax;
+                    updates.logic_skill = newStats.data.skills.logic;
+                    updates.efficiency_skill = newStats.data.skills.speed;
+                }
             }
 
             const { error } = await supabase.from('game_stats').upsert(updates);

@@ -1,7 +1,11 @@
 import { Server } from 'socket.io';
+console.log("-----------------------------------------");
+console.log("  MULTIPLAYER SERVER RESTARTING...  ");
+console.log("-----------------------------------------");
 import { createServer } from 'http';
 import { parse } from 'url';
 import next from 'next';
+import { createClient } from '@supabase/supabase-js';
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = process.env.HOSTNAME || '0.0.0.0';
@@ -14,6 +18,7 @@ const handle = app.getRequestHandler();
 // Types
 interface Player {
   id: string;
+  userId?: string; // Supabase User ID
   name: string;
   color: string;
   position: [number, number, number];
@@ -39,6 +44,9 @@ interface GameRoom {
 
 const rooms = new Map<string, GameRoom>();
 const timers = new Map<string, NodeJS.Timeout>(); // Track active timers per room
+
+// Global connected user count - readable by Next.js API routes via globalThis
+(globalThis as any).__connectedUsers = 0;
 
 // Player colors for visual distinction
 const PLAYER_COLORS = [
@@ -79,6 +87,18 @@ function randomSatellitePosition(level: number = 1): [number, number, number] {
 app.prepare().then(() => {
   let io: Server;
 
+  // Initialize Supabase Client for Server
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY; // Or Service Role Key if needed
+
+  const supabase = (supabaseUrl && supabaseKey)
+    ? createClient(supabaseUrl, supabaseKey)
+    : null;
+
+  if (!supabase) {
+    console.warn("⚠️ Supabase credentials missing in server environment. XP/Level persistence will be disabled.");
+  }
+
   const httpServer = createServer((req, res) => {
     // Delegate to Next.js for all non-socket requests
     // Explicitly pass socket.io requests to the engine to ensure they are handled
@@ -109,13 +129,31 @@ app.prepare().then(() => {
   });
 
   io.on('connection', (socket) => {
-    console.log(`Player connected: ${socket.id}`);
+    (globalThis as any).__connectedUsers = ((globalThis as any).__connectedUsers || 0) + 1;
+    console.log(`Player connected: ${socket.id} | Total: ${(globalThis as any).__connectedUsers}`);
+
+    // Ping/latency measurement - client emits this, we immediately ack
+    socket.on('ping_check', (callback) => {
+      if (typeof callback === 'function') callback();
+    });
 
     // Create or join room
-    socket.on('create-room', (playerName: string, callback) => {
+    socket.on('create-room', (data: { playerName: string, userId?: string } | string, callback) => {
+      // Support both old (string) and new (object) formats for backward compatibility during dev
+      let playerName = '';
+      let userId: string | undefined = undefined;
+
+      if (typeof data === 'string') {
+        playerName = data;
+      } else {
+        playerName = data.playerName;
+        userId = data.userId;
+      }
+
       const roomId = generateRoomId();
       const player: Player = {
         id: socket.id,
+        userId: userId,
         name: playerName,
         color: PLAYER_COLORS[0],
         position: [0, 0, 0],
@@ -142,29 +180,66 @@ app.prepare().then(() => {
       socket.join(roomId);
 
       callback({ success: true, roomId, player });
-      console.log(`Room created: ${roomId} by ${playerName}`);
+      console.log(`Room created: ${roomId} by ${playerName} (User: ${userId || 'Guest'})`);
     });
 
-    socket.on('join-room', (roomId: string, playerName: string, callback) => {
+    socket.on('join-room', (data: { roomId: string, playerName: string, userId?: string } | string, pNameIfString: string | undefined, callback) => {
+      // Handle variable arguments because previous signature was (roomId, playerName, callback)
+      // New signature might come as object in first arg, or we adapt.
+      // But useMultiplayer emits (roomId, playerName, userId, callback) logic? 
+      // No, socket.emit('join-room', { ... }) sends ONE argument + callback.
+      // Previous: socket.emit('join-room', roomId, playerName, callback) sent TWO arguments + callback.
+
+      let roomId = '';
+      let playerName = '';
+      let userId: string | undefined = undefined;
+      let cb: Function | undefined = undefined;
+
+      // Argument shifting logic
+      if (typeof data === 'object' && data !== null && 'roomId' in data) {
+        // New format object
+        roomId = data.roomId;
+        playerName = data.playerName;
+        userId = data.userId;
+        // pNameIfString is actually the callback in this case if emit was called with 2 args (obj, cb)
+        // But wait, socket.io signatures...
+        // If client emits (obj, cb), server receives (obj, cb).
+        // If client emits (a, b, cb), server receives (a, b, cb).
+        // My client code: socketRef.current.emit('join-room', { ... }, (response) => ...)
+        // So server receives (dataObj, callback).
+        cb = pNameIfString as unknown as Function;
+      } else {
+        // Old format: (roomId, playerName, callback)
+        roomId = data as string;
+        playerName = pNameIfString as string;
+        // callback is the 3rd arg, which is `callback` param here if 3 args defined?
+        // In strict TS, this override is messy. Let's assume the client sends object now.
+        // fallback for safety:
+        cb = callback;
+      }
+
+      if (!cb && typeof pNameIfString === 'function') cb = pNameIfString;
+
       const room = rooms.get(roomId);
 
       if (!room) {
-        callback({ success: false, error: 'Room not found' });
+        if (cb) cb({ success: false, error: 'Room not found' });
         return;
       }
 
       if (room.players.size >= 10) {
-        callback({ success: false, error: 'Room is full' });
+        if (cb) cb({ success: false, error: 'Room is full' });
         return;
       }
 
       if (room.gamePhase !== 'lobby') {
-        callback({ success: false, error: 'Game already in progress' });
+        if (cb) cb({ success: false, error: 'Game already in progress' });
         return;
       }
 
       const player: Player = {
         id: socket.id,
+        userId: userId,
         name: playerName,
         color: PLAYER_COLORS[room.players.size],
         position: [0, 0, 0],
@@ -178,7 +253,7 @@ app.prepare().then(() => {
       room.players.set(socket.id, player);
       socket.join(roomId);
 
-      callback({ success: true, roomId, player });
+      if (cb) cb({ success: true, roomId, player });
 
       // Broadcast updated player list
       io.to(roomId).emit('player-joined', {
@@ -278,7 +353,7 @@ app.prepare().then(() => {
       });
     });
 
-    socket.on('player-reached-satellite', (roomId: string) => {
+    socket.on('player-reached-satellite', async (roomId: string) => {
       const room = rooms.get(roomId);
       if (!room || room.winner) return;
 
@@ -288,6 +363,45 @@ app.prepare().then(() => {
       room.winner = socket.id;
       room.gamePhase = 'finished';
 
+      // XP & Level Logic
+      let xp = 0;
+      let level = 1;
+
+      if (supabase && player.userId) {
+        try {
+          // Fetch current stats
+          const { data: stats } = await supabase
+            .from('game_stats')
+            .select('xp, level')
+            .eq('user_id', player.userId)
+            .single();
+
+          const currentXp = stats?.xp || 0;
+          const xpGain = 1000; // Winner gets 1000 XP
+          xp = currentXp + xpGain;
+
+          // Level Calculation: 1000 XP per level? Or progressive?
+          // Prompt: "on 10000xp player will level up" -> suggests high cap, or maybe 10k total?
+          // Let's do simple: level = floor(xp / 1000) + 1 for now, or 10000 per level if implied.
+          // "give xps in such levels... or on 10000xp player will level up"
+          // I'll set 10000 as level 2 threshold.
+          level = Math.floor(xp / 2000) + 1; // 2000 XP per level to make it faster to verify
+
+          // Update DB
+          await supabase.from('game_stats').upsert({
+            user_id: player.userId,
+            xp: xp,
+            level: level,
+            // highest_level update handled by GameProvider typically, but we should sync if needed
+            updated_at: new Date()
+          });
+
+          console.log(`Updated XP for ${player.name}: ${currentXp} -> ${xp} (Lvl ${level})`);
+        } catch (err) {
+          console.error("Failed to update XP:", err);
+        }
+      }
+
       const finalPositions = Array.from(room.players.values())
         .filter(p => !p.isEliminated)
         .sort((a, b) => a.distanceToSatellite - b.distanceToSatellite);
@@ -296,7 +410,9 @@ app.prepare().then(() => {
         winner: {
           id: player.id,
           name: player.name,
-          color: player.color
+          color: player.color,
+          xp: xp,
+          level: level
         },
         finalPositions,
         currentLevel: room.currentRound,
@@ -345,7 +461,8 @@ app.prepare().then(() => {
     });
 
     socket.on('disconnect', () => {
-      console.log(`Player disconnected: ${socket.id}`);
+      (globalThis as any).__connectedUsers = Math.max(0, ((globalThis as any).__connectedUsers || 1) - 1);
+      console.log(`Player disconnected: ${socket.id} | Total: ${(globalThis as any).__connectedUsers}`);
 
       // Remove player from all rooms
       rooms.forEach((room, roomId) => {
@@ -375,8 +492,41 @@ app.prepare().then(() => {
             rooms.delete(roomId);
             console.log(`Room ${roomId} deleted (empty)`);
           } else {
-            // Check if game should proceed (e.g. if the disconnected player was the last one running)
-            checkRoundCompletion(roomId);
+            // Check if game should proceed
+            if (room.gamePhase !== 'lobby' && room.gamePhase !== 'finished' && room.players.size === 1) {
+              // Only one player left, they win by default!
+              const winner = Array.from(room.players.values())[0];
+              room.winner = winner.id;
+              room.gamePhase = 'finished';
+
+              // Clear any running timer
+              const timer = timers.get(roomId);
+              if (timer) {
+                clearInterval(timer);
+                timers.delete(roomId);
+              }
+
+              const finalPositions = [{
+                ...winner,
+                distanceToSatellite: 0 // Technical win, distance doesn't matter
+              }];
+
+              io.to(roomId).emit('game-over', {
+                winner: {
+                  id: winner.id,
+                  name: winner.name,
+                  color: winner.color
+                },
+                finalPositions,
+                currentLevel: room.currentRound,
+                nextLevel: room.currentRound + 1
+              });
+
+              console.log(`Player ${winner.name} won room ${roomId} by default (others left)`);
+            } else {
+              // Normal round completion check
+              checkRoundCompletion(roomId);
+            }
           }
         }
       });

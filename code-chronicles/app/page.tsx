@@ -13,6 +13,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Play, Settings, CreditCard, Volume2, Globe, Radio } from "lucide-react";
 import { useGame } from "@/components/providers/GameProvider";
 import { useAudio } from "@/components/providers/AudioProvider";
+import { usePing } from "@/lib/hooks/usePing";
 
 export default function Home() {
   const router = useRouter();
@@ -22,6 +23,15 @@ export default function Home() {
 
   // Global Audio Context
   const { volume } = useAudio();
+  const { ping, connected, onlineCount } = usePing();
+
+  const getPingColor = (ms: number | null) => {
+    if (!connected || ms === null) return "text-red-400";
+    if (ms < 60) return "text-green-400";
+    if (ms < 120) return "text-cyan-400";
+    if (ms < 200) return "text-yellow-400";
+    return "text-red-400";
+  };
 
   // Settings & Store State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -95,12 +105,16 @@ export default function Home() {
       <div className="absolute top-8 left-8 z-20 pointer-events-none hidden md:block">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2 text-cyan-500/80 font-mono text-xs tracking-widest">
-            <Globe className="w-3 h-3 animate-pulse" />
-            <span>SERVER: US-EAST-1 // CONNECTED</span>
+            <Globe className={`w-3 h-3 ${connected ? 'animate-pulse' : ''}`} />
+            <span>
+              {connected ? `${Math.max(onlineCount, 1)} CONNECTED` : 'OFFLINE'}
+            </span>
           </div>
-          <div className="flex items-center gap-2 text-white/40 font-mono text-[10px]">
-            <span>PING: 24ms</span>
-            <span>LOSS: 0%</span>
+          <div className="flex items-center gap-3 font-mono text-[10px]">
+            <span className={getPingColor(ping)}>
+              PING: {ping !== null ? `${ping}ms` : '…'}
+            </span>
+            <span className="text-white/40">LOSS: 0%</span>
           </div>
         </div>
       </div>
