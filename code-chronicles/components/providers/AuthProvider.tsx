@@ -28,13 +28,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             try {
                 const { data: { session }, error } = await supabase.auth.getSession();
                 if (error) {
-                    console.error("Supabase Session Error:", error.message);
+                    // Stale / expired refresh token — silently clear it so the
+                    // browser stops spamming "Invalid Refresh Token" errors.
+                    const isRefreshError =
+                        error.message?.toLowerCase().includes("refresh token") ||
+                        error.message?.toLowerCase().includes("invalid_grant") ||
+                        (error as any)?.status === 400;
+
+                    if (isRefreshError) {
+                        // Wipe the expired tokens from storage quietly
+                        await supabase.auth.signOut({ scope: "local" });
+                        setSession(null);
+                        setUser(null);
+                    } else {
+                        console.error("Supabase Session Error:", error.message);
+                    }
                 } else {
                     setSession(session);
                     setUser(session?.user ?? null);
                 }
             } catch (e) {
-                console.error("Unexpected Auth Error:", e);
+                // Suppress token errors at the caught level too
+                const msg = (e as any)?.message ?? "";
+                if (!msg.toLowerCase().includes("refresh token")) {
+                    console.error("Unexpected Auth Error:", e);
+                }
             }
             setLoading(false);
         };
@@ -47,6 +65,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Only redirect if not on a public auth page
             const isAuthPage = ['/login', '/signup', '/forgot-password', '/reset-password'].some(path => window.location.pathname.startsWith(path));
             if (_event === 'SIGNED_OUT' && !isAuthPage) {
+                // Only redirect if we were previously logged in (avoid redirect loop)
+                if (session === null) return;
                 router.push('/');
             }
         });

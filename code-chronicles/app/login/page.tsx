@@ -141,7 +141,7 @@ export default function LoginPage() {
                 </div>
 
                 <div className="mt-8 text-center">
-                    <Link href="/" className="text-xs font-mono text-white/20 hover:text-white/60 transition-colors">
+                    <Link href="/game" className="text-xs font-mono text-white/20 hover:text-white/60 transition-colors">
                         ← RETURN TO TITLE
                     </Link>
                 </div>
