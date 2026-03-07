@@ -1,6 +1,6 @@
 "use client";
 
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useGLTF, Environment, Sparkles, Stars, PerspectiveCamera, OrbitControls, Text, Float, CameraShake, Center, Html } from "@react-three/drei";
 import { useRef, useEffect, useState, useMemo } from "react";
 import * as THREE from "three";
@@ -44,44 +44,51 @@ const ROVER_SPEED = 15; // Decreased speed (was 30)
 const TURN_SPEED = 5;
 const BOUNDARY_SIZE = 100; // Boundary limits: ±100 units from origin
 
-// --- Camera Rig for Following Rover ---
-// --- Camera Rig for Following Rover ---
-// --- Camera Rig for Following Rover ---
+// --- Camera Rig for Following Rover (PUBG-Style TPP) ---
 function CameraRig({ targetPos }: { targetPos: [number, number, number] }) {
     const controlsRef = useRef<any>(null);
-    const vec = useRef(new THREE.Vector3());
+    const { camera } = useThree();
+    const isInitialized = useRef(false);
 
-    useFrame((state, delta) => {
-        if (controlsRef.current) {
-            const controls = controlsRef.current;
-            const camera = controls.object;
+    useFrame(() => {
+        if (!controlsRef.current) return;
 
-            // 1. Get the current offset (User's Orbit/Zoom)
-            // vector from Target -> Camera
-            vec.current.subVectors(camera.position, controls.target);
+        const currentTarget = controlsRef.current.target;
+        const desiredTarget = new THREE.Vector3(targetPos[0], targetPos[1] + 1, targetPos[2]); // look slightly above rover base
 
-            // 2. Move the target to the Rover's position
-            // We use a small lerp for the target to smooth out jitter, but it's fast
-            const newTargetX = THREE.MathUtils.lerp(controls.target.x, targetPos[0], 0.2);
-            const newTargetZ = THREE.MathUtils.lerp(controls.target.z, targetPos[2], 0.2);
-
-            controls.target.set(newTargetX, 0, newTargetZ);
-
-            // 3. Apply the offset to the new target position to move the camera
-            camera.position.addVectors(controls.target, vec.current);
-
-            controls.update();
+        if (!isInitialized.current) {
+            // First run: snap camera and target
+            camera.position.set(targetPos[0], targetPos[1] + 5, targetPos[2] - 15);
+            currentTarget.copy(desiredTarget);
+            controlsRef.current.update();
+            isInitialized.current = true;
+            return;
         }
+
+        // Calculate how much the rover's target moved since the last frame
+        const deltaTarget = desiredTarget.clone().sub(currentTarget);
+
+        // Move the camera by the exact same difference.
+        // This ensures the orbit distance and angle you manually dragged to remains identical!
+        camera.position.add(deltaTarget);
+
+        // Update the look-at target to perfectly match the rover's new position
+        currentTarget.copy(desiredTarget);
+
+        controlsRef.current.update();
     });
 
     return (
         <OrbitControls
             ref={controlsRef}
-            enableZoom={true}
             enablePan={false}
-            maxPolarAngle={Math.PI / 2.05} // Prevent going below ground
+            enableZoom={true}
+            enableDamping={true}
+            dampingFactor={0.05}
+            maxPolarAngle={Math.PI / 2.05}
             minDistance={5}
             maxDistance={80}
+            makeDefault
         />
     );
 }
@@ -204,9 +211,8 @@ export default function PlaygroundScene({
     return (
         <div className="w-full h-full bg-black rounded-lg overflow-hidden border border-white/10 relative">
             <Canvas shadows={shadows} dpr={[1, resolution]}> {/* dpr for sharper rendering */}
-                {/* Camera Rig that maps OrbitControls target to Rover */}
+                {/* Camera Rig that maintains TPP tracking and allows user orbit */}
                 <CameraRig targetPos={roverPos} />
-                <PerspectiveCamera makeDefault position={[0, 3, 12]} fov={60} />
 
                 <CameraShake
                     maxYaw={0.05 * shakeIntensity}
@@ -765,6 +771,8 @@ function Hazard({ x, z }: { x: number, z: number }) {
 
 function Satellite({ position }: { position: [number, number, number] }) {
     const { scene } = useGLTF("/satelite.glb");
+    const ringsRef = useRef<THREE.Group>(null);
+    const beamRef = useRef<THREE.Group>(null);
 
     // Clone and add GLOW effect
     const cloned = useMemo(() => {
@@ -774,7 +782,7 @@ function Satellite({ position }: { position: [number, number, number] }) {
                 const m = child as THREE.Mesh;
                 m.castShadow = true;
                 if (m.material) {
-                    (m.material as THREE.MeshStandardMaterial).emissive = new THREE.Color("lime");
+                    (m.material as THREE.MeshStandardMaterial).emissive = new THREE.Color("#00ffcc");
                     (m.material as THREE.MeshStandardMaterial).emissiveIntensity = 2;
                 }
             }
@@ -782,19 +790,87 @@ function Satellite({ position }: { position: [number, number, number] }) {
         return c;
     }, [scene]);
 
+    useFrame((state) => {
+        const time = state.clock.elapsedTime;
+        if (ringsRef.current) {
+            ringsRef.current.rotation.y = time * 0.5;
+            ringsRef.current.rotation.x = Math.sin(time * 0.5) * 0.2;
+            ringsRef.current.rotation.z = Math.cos(time * 0.5) * 0.2;
+        }
+        if (beamRef.current) {
+            // Pulsate the beam opacity/scale
+            const pulse = 0.5 + Math.sin(time * 3) * 0.5;
+            beamRef.current.scale.set(1 + pulse * 0.2, 1, 1 + pulse * 0.2);
+        }
+    });
+
     return (
         <group position={position}>
+            {/* Core Satellite Model */}
             <Float speed={2} rotationIntensity={1} floatIntensity={1}>
                 <primitive object={cloned} scale={[0.6, 0.6, 0.6]} />
-                <pointLight color="red" distance={100} intensity={5} />
-                <Sparkles count={20} color="red" scale={5} speed={2} />
+                <pointLight color="#00ffcc" distance={50} intensity={8} />
+                <Sparkles count={40} color="#00ffcc" scale={8} size={4} speed={2} />
             </Float>
-            {/* Beacon Beam */}
-            <mesh position={[0, 50, 0]}>
-                <cylinderGeometry args={[0.1, 0.1, 100, 8]} />
-                <meshBasicMaterial color="lime" transparent opacity={0.3} />
-            </mesh>
-            <Text position={[0, 5, 0]} fontSize={1.5} color="lime">SATELLITE SIGNAL</Text>
+
+            {/* Holographic Rings */}
+            <group ref={ringsRef}>
+                <mesh rotation={[-Math.PI / 2, 0, 0]}>
+                    <ringGeometry args={[2, 2.2, 32]} />
+                    <meshBasicMaterial
+                        color="#00aaaa"
+                        transparent
+                        opacity={0.6}
+                        side={THREE.DoubleSide}
+                        blending={THREE.AdditiveBlending}
+                    />
+                </mesh>
+                <mesh rotation={[-Math.PI / 2 + 0.5, 0.5, 0]}>
+                    <ringGeometry args={[3, 3.1, 32]} />
+                    <meshBasicMaterial
+                        color="#00ffcc"
+                        transparent
+                        opacity={0.3}
+                        side={THREE.DoubleSide}
+                        blending={THREE.AdditiveBlending}
+                    />
+                </mesh>
+            </group>
+
+            {/* Enhanced Beacon Beam */}
+            <group ref={beamRef} position={[0, 50, 0]}>
+                {/* Inner Bright Core */}
+                <mesh>
+                    <cylinderGeometry args={[0.2, 0.2, 100, 16]} />
+                    <meshBasicMaterial
+                        color="#ffffff"
+                        transparent
+                        opacity={0.8}
+                        blending={THREE.AdditiveBlending}
+                    />
+                </mesh>
+                {/* Outer Soft Glow */}
+                <mesh>
+                    <cylinderGeometry args={[0.8, 0.8, 100, 16]} />
+                    <meshBasicMaterial
+                        color="#00ffcc"
+                        transparent
+                        opacity={0.2}
+                        blending={THREE.AdditiveBlending}
+                    />
+                </mesh>
+            </group>
+
+            {/* Floating Text Label */}
+            <Text
+                position={[0, 5, 0]}
+                fontSize={1.2}
+                color="#00ffcc"
+                outlineWidth={0.05}
+                outlineColor="#000000"
+            >
+                SATELLITE SIGNAL
+            </Text>
         </group>
     );
 }
