@@ -5,6 +5,9 @@ const openai = process.env.OPENAI_API_KEY ? new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 }) : null;
 
+// The configured Assistant ID for the AI Mentor
+const ASSISTANT_ID = "asst_hhWHNsTMwRHe3SaLiB4NizMf";
+
 export async function POST(req: Request) {
     try {
         const { code, stepType, userSkills } = await req.json();
@@ -28,7 +31,7 @@ export async function POST(req: Request) {
         - If Logic > 80: Challenge them with "efficiency" remarks even if code is valid.
         ` : "Treat user as a standard recruit.";
 
-        const systemPrompt = `You are a strict C compiler and game mentor for a beginner.
+        const additionalInstructions = `You are a strict C compiler and game mentor for a beginner.
         The user is learning C variables step-by-step.
         ${skillContext}
 
@@ -50,7 +53,7 @@ export async function POST(req: Request) {
            - If it contains "right" or 'R', set direction="right".
            - Otherwise "forward".
         
-        Respond in JSON format:
+        Respond in strict JSON format:
         {
             "valid": boolean,
             "message": "Short feedback string (max 1 sentence). Use metaphors.",
@@ -62,17 +65,28 @@ export async function POST(req: Request) {
         For 'int': Set 'speed' to the assigned integer value. Direction="forward".
         `;
 
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o",
-            messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: `Code:\n${code}` }
-            ],
+        const run = await openai.beta.threads.createAndRunPoll({
+            assistant_id: ASSISTANT_ID,
+            thread: {
+                messages: [
+                    { role: "user", content: `Code:\n${code}` }
+                ]
+            },
+            additional_instructions: additionalInstructions,
             response_format: { type: "json_object" }
         });
 
-        const content = completion.choices[0].message.content;
-        return NextResponse.json(JSON.parse(content || "{}"));
+        if (run.status === 'completed') {
+            const messagesList = await openai.beta.threads.messages.list(run.thread_id);
+            const lastMessage = messagesList.data.filter((m: any) => m.role === 'assistant')[0];
+
+            if (lastMessage && lastMessage.content[0].type === 'text') {
+                const content = lastMessage.content[0].text.value;
+                return NextResponse.json(JSON.parse(content || "{}"));
+            }
+        }
+
+        return NextResponse.json({ valid: false, message: "AI Assistant interrupted or failed to respond completely." });
 
     } catch (error) {
         console.error("Validation Error:", error);
